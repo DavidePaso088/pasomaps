@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#070c16">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="description" content="PasoMaps — i giri del corriere, sempre senza autostrada.">
+<title>PasoMaps</title>
+<link rel="icon" href="icons/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<!-- ============ SPLASH ============ -->
+<div id="boot">
+  <div class="boot-logo">🗺️</div>
+  <div class="boot-name">Paso<span>Maps</span></div>
+  <div class="boot-sub">i tuoi giri, senza autostrada</div>
+</div>
+
+<!-- ============ HOME ============ -->
+<section id="s-home" class="screen on">
+  <header class="appbar">
+    <div class="brand"><span class="logo-dot"></span>Paso<span>Maps</span></div>
+    <button class="icon-btn" id="btn-settings" aria-label="Impostazioni">⚙</button>
+  </header>
+  <div class="home-scroll">
+    <h1 class="home-title">Quale giro oggi?</h1>
+    <p class="home-sub" id="home-sub">Scegli il giro che stai facendo: si apre la mappa con le tappe già pronte.</p>
+    <div id="giri-list" class="giri-list"></div>
+    <button id="btn-new-giro" class="btn-wide">+ Nuovo giro</button>
+    <button id="btn-cycle" class="btn-ghost" hidden>Crea ciclo di più giri</button>
+    <p class="fine">Percorsi calcolati <b>evitando sempre le autostrade</b>.<br>Dati salvati solo su questo telefono.</p>
+  </div>
+</section>
+
+<!-- ============ GIRO / MAPPA ============ -->
+<section id="s-giro" class="screen">
+  <div class="map-shell">
+    <div id="map"></div>
+    <div class="map-top">
+      <button class="icon-btn onmap" id="btn-back" aria-label="Indietro">‹</button>
+      <div class="map-title"><b id="giro-name">—</b><span id="giro-city">—</span></div>
+      <button class="icon-btn onmap" id="btn-alt" aria-label="Percorso alternativo">⇄</button>
+      <button class="icon-btn onmap" id="btn-recenter" aria-label="Centra sulla mia posizione">◎</button>
+    </div>
+    <div class="nav-banner" id="nav-banner">
+      <div class="arrow" id="nb-arrow">↱</div>
+      <div class="txt"><b id="nb-title">—</b><span id="nb-sub">—</span></div>
+    </div>
+    <div class="map-hint" id="route-state">Calcolo percorso…</div>
+  </div>
+  <div class="bottom-panel">
+    <div class="eta-wrap">
+      <div class="eta-label" id="eta-label">Prossima tappa</div>
+      <div class="eta-main"><span id="eta-time">--</span><span class="unit" id="eta-unit">min</span></div>
+      <div class="eta-sub"><span id="eta-km">-- km</span><span class="sep">·</span><span id="eta-arr">--:--</span></div>
+      <div class="eta-stop" id="eta-stop">nessuna tappa</div>
+    </div>
+    <button id="btn-nav" class="nav-fab" aria-label="Naviga">➤</button>
+    <button id="btn-sheet" class="fab">
+      <span class="fab-ic">☰</span><span>Tappe</span>
+      <span class="fab-badge" id="fab-badge">0</span>
+    </button>
+  </div>
+</section>
+
+<!-- ============ SHEET TAPPE ============ -->
+<div class="sheet-bg" id="sheet-bg"></div>
+<div class="sheet" id="sheet" role="dialog" aria-label="Tappe del giro">
+  <div class="sheet-grip" id="sheet-grip"></div>
+  <div class="sheet-head">
+    <div class="t">Tappe <span class="pill" id="sheet-count">0</span></div>
+    <div class="sheet-actions">
+      <button class="chip chip-primary" id="btn-add-stop">+ Aggiungi</button>
+      <button class="chip" id="btn-close-sheet" aria-label="Chiudi">✕</button>
+    </div>
+  </div>
+  <div class="sheet-body" id="sheet-body">
+    <div class="stops" id="stops-list"></div>
+    <div class="sheet-foot">
+      <button class="btn-wide" id="btn-save">Salva percorso</button>
+      <button class="btn-ghost" id="btn-optimize" style="padding:11px">⇅ Riordina per vicinanza</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODALI ============ -->
+<div class="modal" id="modal"><div class="modal-card" id="modal-card"></div></div>
+
+<!-- menu navigazione -->
+<div class="modal" id="navmenu"><div class="modal-card">
+  <div class="modal-head"><b>Naviga alla prossima tappa</b><button class="x" data-close="navmenu">✕</button></div>
+  <div style="display:flex;flex-direction:column;gap:9px">
+    <button class="btn primary" id="nav-inapp" style="padding:16px">🧭 Navigazione in app</button>
+    <button class="btn" id="nav-google" style="padding:16px">🟦 Apri Google Maps <small style="color:#8fa1bd;font-weight:400">(senza autostrade)</small></button>
+  </div>
+  <p class="hint" style="margin-top:12px">La navigazione in app rispetta <b>altezza, peso e larghezza</b> del mezzo. Google Maps accetta “evita autostrade”, ma non conosce le misure del camioncino: sottopassi bassi e limiti di peso non li vede. Google Maps è l’unica app esterna che permette di forzare l’esclusione delle autostrade da link; le altre (Waze, OsmAnd, Organic Maps) vanno impostate a mano dentro l’app.</p>
+</div></div>
+
+<div id="toasts"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

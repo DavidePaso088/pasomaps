@@ -1,0 +1,20 @@
+{
+  "name": "PasoMaps",
+  "short_name": "PasoMaps",
+  "description": "I giri del corriere: tappe, note di consegna e percorsi sempre senza autostrada.",
+  "lang": "it",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#070c16",
+  "theme_color": "#070c16",
+  "categories": ["navigation", "productivity", "business"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
