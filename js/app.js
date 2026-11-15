@@ -51,7 +51,7 @@
   /* =============================== B. DATI =============================== */
   const DB_KEY = 'pasomaps.db.v1';
   const DEFAULT_TRUCK = { height: 2.8, width: 2.1, length: 6.0, weight: 3.5, axle_load: 1.8 };
-  const DEFAULT_SETTINGS = { voice: true, brightness: 1.35, autoAdvance: true, trafficKey: '', tomtomKey: '', lastGiroId: null };
+  const DEFAULT_SETTINGS = { voice: true, brightness: 0.9, autoAdvance: true, trafficKey: '', tomtomKey: '', mapStyle: 2, lastGiroId: null };
   const PALETTE = ['#3b82f6', '#22d3ee', '#a78bfa', '#f472b6', '#f59e0b', '#34d399', '#60a5fa', '#fb7185', '#c084fc', '#facc15', '#2dd4bf', '#f97316', '#818cf8', '#4ade80'];
 
   let db = null;
@@ -64,7 +64,13 @@
     const f = freshDB();
     if (!d || typeof d !== 'object') return f;
     d.truck = Object.assign({}, f.truck, d.truck || {});
+    const hadStyle = !!(d.settings && d.settings.mapStyle === 2);
     d.settings = Object.assign({}, f.settings, d.settings || {});
+    if (!hadStyle) {
+      // cambio base mappa (CARTO -> OSM con filtro scuro): ricalibro la luminosità
+      d.settings.mapStyle = 2;
+      d.settings.brightness = 0.9;
+    }
     d.giri = Array.isArray(d.giri) ? d.giri : [];
     d.giri.forEach((g) => {
       g.id = g.id || uid();
@@ -419,14 +425,14 @@
   }
 
   /* =============================== E. MAPPA =============================== */
-  const TILES = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+  const TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
   let map = null;
   const LAY = { stops: null, route: null, nav: null, me: null, alt: null };
 
   function ensureMap() {
     if (map) return map;
     map = L.map('map', { zoomControl: false, attributionControl: true, preferCanvas: true, center: [42.2, 12.4], zoom: 6 });
-    L.tileLayer(TILES, { subdomains: 'abcd', maxZoom: 19, detectRetina: true, attribution: '&copy; OpenStreetMap · &copy; CARTO' }).addTo(map);
+    L.tileLayer(TILES, { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
     map.attributionControl.setPrefix('');
     LAY.stops = L.layerGroup().addTo(map);
     LAY.alt = L.layerGroup().addTo(map);
@@ -1349,7 +1355,7 @@
       '<div class="switch"><div class="lbl">Passa da sola alla tappa dopo<small>Quando arrivi, segna fatta e riparte</small></div><button class="tgl ' + (db.settings.autoAdvance ? 'on' : '') + '" id="s-auto"></button></div>' +
       '<div class="switch"><div class="lbl">Autostrade<small>Bloccate: i percorsi non le usano mai. Statali e provinciali sì.</small></div><button class="tgl on locked" id="s-hw" style="opacity:.55"></button></div>' +
       '<div class="section-t">Mappa</div>' +
-      '<div class="field"><label>Luminosità mappa</label><input id="s-bright" type="range" min="1" max="1.9" step="0.05" value="' + db.settings.brightness + '"><div class="hint">Il resto dell’app resta scuro.</div></div>' +
+      '<div class="field"><label>Luminosità mappa</label><input id="s-bright" type="range" min="0.6" max="1.3" step="0.05" value="' + db.settings.brightness + '"><div class="hint">Il resto dell’app resta scuro.</div></div>' +
       '<div class="section-t">Traffico (TomTom)</div>' +
       '<div class="field"><label>Chiave API TomTom</label>' +
       '<input id="s-tt" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="incolla qui la chiave" value="' + esc(db.settings.tomtomKey || '') + '">' +
@@ -1535,7 +1541,7 @@
   }
 
   function applyBrightness() {
-    document.documentElement.style.setProperty('--map-filter', 'brightness(' + db.settings.brightness + ') saturate(1.12) contrast(1.03)');
+    document.documentElement.style.setProperty('--map-filter', 'grayscale(1) invert(1) brightness(' + db.settings.brightness + ') contrast(1.08)');
   }
 
   /* =============================== P. EVENTI =============================== */

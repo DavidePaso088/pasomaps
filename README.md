@@ -173,7 +173,7 @@ PasoMaps/
 
 Servizi esterni usati, tutti senza chiave:
 
-- **Tile mappa**: CARTO dark (OpenStreetMap) — attribuzione visibile sulla mappa.
+- **Tile mappa**: OpenStreetMap standard, resa scura via filtro CSS (niente chiavi, niente CARTO).
 - **Routing**: Valhalla, profilo truck.
 - **Geocodifica**: Nominatim con fallback Photon.
 - **Leaflet** da unpkg.

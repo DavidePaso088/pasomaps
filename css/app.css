@@ -16,7 +16,7 @@
   --r:18px;
   --safe-b:env(safe-area-inset-bottom,0px);
   --safe-t:env(safe-area-inset-top,0px);
-  --map-filter:brightness(1.35) saturate(1.12) contrast(1.03);
+  --map-filter:grayscale(1) invert(1) brightness(0.9) contrast(1.08);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;overflow:hidden}
