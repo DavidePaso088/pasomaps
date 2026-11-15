@@ -1650,7 +1650,7 @@
     }
     // iOS: le voci arrivano in ritardo
     if ('speechSynthesis' in window) window.speechSynthesis.onvoiceschanged = () => { voiceIt = null; };
-    window.PasoMaps = { db: () => db, S: S, computePreview: computePreview };
+    window.PasoMaps = { db: () => db, S: S, Nav: Nav, computePreview: computePreview };
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
