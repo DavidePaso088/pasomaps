@@ -519,7 +519,7 @@ b,strong{font-weight:700}
   /* =============================== B. DATI =============================== */
   const DB_KEY = 'pasomaps.db.v1';
   const DEFAULT_TRUCK = { height: 2.8, width: 2.1, length: 6.0, weight: 3.5, axle_load: 1.8 };
-  const DEFAULT_SETTINGS = { voice: true, brightness: 1.35, autoAdvance: true, trafficKey: '', lastGiroId: null };
+  const DEFAULT_SETTINGS = { voice: true, brightness: 1.35, autoAdvance: true, trafficKey: '', tomtomKey: '', lastGiroId: null };
   const PALETTE = ['#3b82f6', '#22d3ee', '#a78bfa', '#f472b6', '#f59e0b', '#34d399', '#60a5fa', '#fb7185', '#c084fc', '#facc15', '#2dd4bf', '#f97316', '#818cf8', '#4ade80'];
 
   let db = null;
@@ -648,8 +648,148 @@ b,strong{font-weight:700}
     };
   }
 
+  /* ---------- TomTom (traffico + camion), usato solo se c'è la chiave ---------- */
+  const TT_ROUTE = 'https://api.tomtom.com/routing/1/calculateRoute/';
+  const tomtomKey = () => ((db.settings.tomtomKey || '').trim());
+  const tomtomReady = () => tomtomKey().length >= 20;
+  let ttWarned = 0;
+
+  function arrowTT(m) {
+    const s = String(m || '').toUpperCase();
+    if (/ROUNDABOUT/.test(s)) return '🔄';
+    if (/UTURN/.test(s)) return '↩';
+    if (/SHARP_LEFT|TURN_LEFT|KEEP_LEFT|RAMP_LEFT/.test(s) && !/RIGHT/.test(s)) return /SHARP/.test(s) ? '⬉' : '↰';
+    if (/SHARP_RIGHT|TURN_RIGHT|KEEP_RIGHT|RAMP_RIGHT/.test(s) && !/LEFT/.test(s)) return /SHARP/.test(s) ? '⬈' : '↱';
+    if (/SLIGHT_LEFT/.test(s)) return '↖';
+    if (/SLIGHT_RIGHT/.test(s)) return '↗';
+    if (/ARRIVE/.test(s)) return '🏁';
+    if (/FERRY/.test(s)) return '⛴';
+    return '↑';
+  }
+
+  function ttUrlParams(opts) {
+    const t = db.truck;
+    const p = new URLSearchParams();
+    p.set('key', tomtomKey());
+    p.set('travelMode', 'truck');
+    p.set('traffic', 'true');
+    p.append('avoid', 'motorways');
+    p.set('routeType', opts.shortest ? 'shortest' : 'fastest');
+    p.set('vehicleHeight', String(+t.height || 2.8));
+    p.set('vehicleWidth', String(+t.width || 2.1));
+    p.set('vehicleLength', String(+t.length || 6));
+    p.set('vehicleWeight', String(Math.round((+t.weight || 3.5) * 1000)));
+    p.set('vehicleAxleWeight', String(Math.round((+t.axle_load || 1.8) * 1000)));
+    p.set('vehicleCommercial', 'true');
+    p.set('language', 'it-IT');
+    p.set('computeTravelTimeFor', 'all');
+    p.append('sectionType', 'traffic');
+    p.append('sectionType', 'motorway');
+    return p;
+  }
+
+  async function requestRouteTomTom(points, opts) {
+    const locs = points.map((p) => (+p.lat).toFixed(6) + ',' + (+p.lng).toFixed(6)).join(':');
+    const res = await fetch(TT_ROUTE + locs + '/json?' + ttUrlParams(opts).toString());
+    if (!res.ok) {
+      let msg = 'HTTP ' + res.status;
+      try { const e = await res.json(); msg += ' ' + ((e.detailedError && e.detailedError.message) || (e.error && e.error.description) || ''); } catch (e2) { }
+      throw new Error(msg.trim());
+    }
+    return parseTomTom(await res.json());
+  }
+
+  function parseTomTom(j) {
+    const route = (j.routes || [])[0];
+    if (!route) throw new Error('nessun percorso');
+    const all = [];
+    const legs = [];
+    (route.legs || []).forEach((leg) => {
+      const pts = (leg.points || []).map((p) => ({ lat: p.latitude, lng: p.longitude }));
+      pts.forEach((p) => {
+        const last = all[all.length - 1];
+        if (!last || last.lat !== p.lat || last.lng !== p.lng) all.push(p);
+      });
+      const path = withCum(pts);
+      const sum = leg.summary || {};
+      legs.push({
+        coords: pts,
+        cum: path.cum,
+        total: path.total,
+        maneuvers: [],
+        km: sum.lengthInMeters != null ? sum.lengthInMeters / 1000 : path.total / 1000,
+        sec: sum.travelTimeInSeconds || 0,
+        delay: sum.trafficDelayInSeconds || 0,
+        highway: false,
+        toll: false
+      });
+    });
+    if (!legs.length) throw new Error('nessuna gamba');
+    const ins = (route.guidance && route.guidance.instructions) || [];
+    if (legs.length === 1) {
+      legs[0].maneuvers = ins.map((m) => ({
+        type: m.maneuver,
+        text: m.message || m.instruction || '',
+        verbal: m.message || m.instruction || '',
+        arrow: arrowTT(m.maneuver),
+        along: m.routeOffsetInMeters || 0,
+        length: 0,
+        refs: '',
+        names: m.street || ''
+      })).filter((m) => m.text);
+    }
+    const sections = [];
+    let motorway = 0;
+    (route.sections || []).forEach((s) => {
+      if (s.sectionType === 'TRAFFIC') {
+        sections.push({ from: s.startPointIndex || 0, to: s.endPointIndex || 0, mag: s.magnitudeOfDelay || 1, delay: s.delayInSeconds || 0 });
+      } else if (s.sectionType === 'MOTORWAY') motorway++;
+    });
+    const sum = route.summary || {};
+    return {
+      legs: legs,
+      coords: all,
+      sections: sections,
+      source: 'tomtom',
+      km: sum.lengthInMeters != null ? sum.lengthInMeters / 1000 : legs.reduce((a, l) => a + l.km, 0),
+      sec: sum.travelTimeInSeconds || legs.reduce((a, l) => a + l.sec, 0),
+      trafficDelay: sum.trafficDelayInSeconds || 0,
+      highway: motorway > 0,
+      motorwayWarning: motorway > 0
+    };
+  }
+
+  async function verifyTomTomKey(key) {
+    try {
+      const url = TT_ROUTE + '45.4384,10.9916:45.5455,11.5353/json?key=' + encodeURIComponent(key) +
+        '&travelMode=car&traffic=true&computeTravelTimeFor=all';
+      const res = await fetch(url);
+      if (!res.ok) {
+        let detail = '';
+        try { const e = await res.json(); detail = (e.detailedError && e.detailedError.message) || ''; } catch (e2) { }
+        return { ok: false, msg: 'HTTP ' + res.status + (detail ? ' · ' + detail : '') };
+      }
+      const j = await res.json();
+      const s = j.routes && j.routes[0] && j.routes[0].summary;
+      if (!s) return { ok: false, msg: 'risposta senza percorso' };
+      return { ok: true, km: Math.round(s.lengthInMeters / 1000), min: Math.round(s.travelTimeInSeconds / 60), delay: Math.round((s.trafficDelayInSeconds || 0) / 60) };
+    } catch (e) {
+      return { ok: false, msg: e.message || 'rete bloccata' };
+    }
+  }
+
   async function requestRoute(points, opts) {
     opts = opts || {};
+    if (tomtomReady()) {
+      try { return await requestRouteTomTom(points, opts); }
+      catch (e) {
+        const now = Date.now();
+        if (now - ttWarned > 60000) {
+          ttWarned = now;
+          toast('TomTom non risponde (' + esc(e.message || 'errore') + '): uso il percorso senza traffico', 'bad');
+        }
+      }
+    }
     const body = {
       locations: points.map((p) => ({ lat: +p.lat, lon: +p.lng, type: 'break' })),
       costing: 'truck',
@@ -719,7 +859,8 @@ b,strong{font-weight:700}
   async function routePoints(points, opts) {
     opts = opts || {};
     if (points.length < 2) throw new Error('Servono almeno due punti');
-    if (points.length <= MAX_LOCATIONS) {
+    const maxLoc = tomtomReady() ? 100 : MAX_LOCATIONS;
+    if (points.length <= maxLoc) {
       let r = await requestRoute(points, opts);
       let bad = r.highway || r.legs.some(legTouchesMotorway);
       if (bad && !opts.shortest) {
@@ -734,8 +875,8 @@ b,strong{font-weight:700}
     }
     // molti punti: il server accetta max 10 locations per richiesta
     let legs = [], km = 0, sec = 0, motorwayWarning = false;
-    for (let i = 0; i < points.length - 1; i += MAX_LOCATIONS - 1) {
-      const slice = points.slice(i, Math.min(i + MAX_LOCATIONS, points.length));
+    for (let i = 0; i < points.length - 1; i += maxLoc - 1) {
+      const slice = points.slice(i, Math.min(i + maxLoc, points.length));
       const r = await routePoints(slice, opts);
       legs = legs.concat(r.legs);
       km += r.km; sec += r.sec;
@@ -958,9 +1099,12 @@ b,strong{font-weight:700}
       clearLayer(LAY.alt);
       drawPreview(r);
       const hw = r.motorwayWarning;
+      const tt = r.source === 'tomtom';
+      const trafficTxt = tt ? (r.trafficDelay > 90 ? 'traffico +' + Math.round(r.trafficDelay / 60) + ' min' : 'traffico ok') : 'senza traffico';
       setRouteState(
         fmtKmVal(r.km) + ' · ' + timeParts(r.sec).main + (timeParts(r.sec).unit ? ' ' + timeParts(r.sec).unit : '') +
-        ' · ' + (hw ? '⚠ possibile tratto autostradale, controlla' : 'senza autostrada ✓'),
+        ' · ' + (hw ? '⚠ possibile tratto autostradale, controlla' : 'senza autostrada ✓') +
+        ' · ' + trafficTxt,
         hw ? 'warn' : ''
       );
       updateEta(); renderStops();
@@ -976,13 +1120,29 @@ b,strong{font-weight:700}
     }
   }
 
+  function trafficColor(mag) { return mag >= 3 ? '#ef4444' : mag === 2 ? '#f97316' : '#f59e0b'; }
+
+  function drawSections(layer, coords, sections) {
+    if (!coords || !sections) return;
+    sections.forEach((s) => {
+      const seg = coords.slice(Math.max(0, s.from), Math.min(coords.length, s.to + 1)).map((c) => [c.lat, c.lng]);
+      if (seg.length < 2) return;
+      L.polyline(seg, { color: trafficColor(s.mag), weight: 5, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }).addTo(layer);
+    });
+  }
+
   function drawPreview(r) {
     clearLayer(LAY.route);
-    const pts = [];
-    r.legs.forEach((l) => l.coords.forEach((c, i) => { if (i === 0 && pts.length) return; pts.push([c.lat, c.lng]); }));
+    let pts = [];
+    if (r.coords && r.coords.length > 1) {
+      pts = r.coords.map((c) => [c.lat, c.lng]);
+    } else {
+      r.legs.forEach((l) => l.coords.forEach((c, i) => { if (i === 0 && pts.length) return; pts.push([c.lat, c.lng]); }));
+    }
     if (pts.length < 2) return;
     L.polyline(pts, { color: '#0b2a63', weight: 12, opacity: 0.55, lineCap: 'round', lineJoin: 'round' }).addTo(LAY.route);
     L.polyline(pts, { color: '#3b82f6', weight: 6, opacity: 0.98, lineCap: 'round', lineJoin: 'round' }).addTo(LAY.route);
+    drawSections(LAY.route, r.coords, r.sections);
   }
 
   function drawMarkers() {
@@ -1083,6 +1243,22 @@ b,strong{font-weight:700}
     $('#eta-unit').textContent = tp.unit;
     $('#eta-km').textContent = fmtKmVal(km);
     $('#eta-arr').textContent = 'arrivo ' + clockIn(sec);
+    let delayShow = 0;
+    if (S.previewFromMe && S.shownRoute && S.shownRoute.legs[0]) delayShow = S.shownRoute.legs[0].delay || 0;
+    else if (S.shownRoute) delayShow = S.shownRoute.trafficDelay || 0;
+    paintEtaTraffic(delayShow);
+  }
+
+  function paintEtaTraffic(delaySec) {
+    const el = $('#eta-time');
+    const lb = $('#eta-label');
+    if (!el || !lb) return;
+    if (delaySec > 120) {
+      el.style.color = '#f5a623';
+      if (lb.textContent.indexOf('traffico') === -1) lb.textContent = lb.textContent + ' · traffico +' + Math.round(delaySec / 60) + ' min';
+    } else {
+      el.style.color = '';
+    }
   }
 
   /* =============================== K. SHEET TAPPE =============================== */
@@ -1429,6 +1605,7 @@ b,strong{font-weight:700}
       if (!leg) throw new Error('nessun percorso');
       Nav.route = leg;
       Nav.route.dest = dest;
+      Nav.route.sections = r.sections;
       Nav.spoken = {};
       drawNav(leg);
       navUpdate();
@@ -1444,6 +1621,7 @@ b,strong{font-weight:700}
     if (pts.length < 2) return;
     L.polyline(pts, { color: '#ffffff', weight: 10, opacity: 0.16, lineCap: 'round' }).addTo(LAY.nav);
     L.polyline(pts, { color: '#38bdf8', weight: 7, opacity: 1, lineCap: 'round', lineJoin: 'round' }).addTo(LAY.nav);
+    drawSections(LAY.nav, leg.coords, leg.sections);
   }
 
   function navUpdate() {
@@ -1463,6 +1641,7 @@ b,strong{font-weight:700}
     $('#eta-km').textContent = fmtMeters(remaining);
     $('#eta-arr').textContent = 'arrivo ' + clockIn(remSec);
     $('#eta-stop').textContent = name;
+    paintEtaTraffic(Nav.route.delay || 0);
 
     // prossima manovra
     const mans = Nav.route.maneuvers || [];
@@ -1631,13 +1810,18 @@ b,strong{font-weight:700}
       '<div class="switch"><div class="lbl">Autostrade<small>Bloccate: i percorsi non le usano mai. Statali e provinciali sì.</small></div><button class="tgl on locked" id="s-hw" style="opacity:.55"></button></div>' +
       '<div class="section-t">Mappa</div>' +
       '<div class="field"><label>Luminosità mappa</label><input id="s-bright" type="range" min="1" max="1.9" step="0.05" value="' + db.settings.brightness + '"><div class="hint">Il resto dell’app resta scuro.</div></div>' +
+      '<div class="section-t">Traffico (TomTom)</div>' +
+      '<div class="field"><label>Chiave API TomTom</label>' +
+      '<input id="s-tt" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="incolla qui la chiave" value="' + esc(db.settings.tomtomKey || '') + '">' +
+      '<div class="hint">Con la chiave i tempi e i tratti colorati usano il traffico TomTom. La chiave resta <b>solo su questo telefono</b> e non finisce nel backup né nel repository. Senza chiave l’app funziona come prima, con tempi senza traffico.</div></div>' +
+      '<div class="btn-row"><button class="btn" id="s-tt-verify">Verifica chiave</button><button class="btn" id="s-tt-clear">Rimuovi</button></div>' +
       '<div class="section-t">Dati</div>' +
       '<div class="btn-row"><button class="btn" id="s-export">Esporta backup</button><button class="btn" id="s-import">Importa</button></div>' +
       '<button class="btn" id="s-reset-day" style="width:100%;margin-top:9px">Azzera il giro di oggi</button>' +
       '<button class="btn danger" id="s-wipe" style="width:100%;margin-top:9px">Cancella tutti i dati</button>' +
       '<p class="hint">I dati stanno solo in questo telefono: se cancelli la cache del browser o cambi telefono, senza backup li perdi.</p>' +
       '<div class="section-t">Info</div>' +
-      '<p class="hint">PasoMaps usa OpenStreetMap con profilo di routing <b>camion</b> e autostrade escluse (parametro <code>use_highways=0</code>). I tempi sono stime senza traffico: il traffico in tempo reale richiede un servizio a pagamento (Google, TomTom, HERE).<br><br>Il routing conosce altezza, larghezza, lunghezza e peso del mezzo, ma <b>non tutte le ordinanze locali, ZTL o divieti temporanei</b>: la segnaletica sul posto resta l’unica verità.</p>';
+      '<p class="hint">Base: OpenStreetMap + Valhalla (profilo camion, autostrade escluse). Con la chiave TomTom, percorso e tempi usano TomTom con <b>traffico live</b>, sempre con camion e autostrade escluse; se TomTom non risponde l’app torna da sola al calcolo senza traffico.<br><br>Il routing conosce altezza, larghezza, lunghezza e peso del mezzo, ma <b>non tutte le ordinanze locali, ZTL o divieti temporanei</b>: la segnaletica sul posto resta l’unica verità.</p>';
     openModal(html);
     $('#s-close').addEventListener('click', closeModal);
     const bindTruck = (id, key, min, max) => $('#' + id).addEventListener('change', (e) => {
@@ -1658,6 +1842,34 @@ b,strong{font-weight:700}
     });
     $('#s-export').addEventListener('click', exportData);
     $('#s-import').addEventListener('click', importData);
+    const ttInput = $('#s-tt');
+    if (ttInput) {
+      ttInput.addEventListener('change', () => {
+        db.settings.tomtomKey = ttInput.value.trim();
+        saveDB();
+        toast(db.settings.tomtomKey ? 'Chiave salvata sul telefono' : 'Chiave rimossa', 'good');
+      });
+    }
+    if ($('#s-tt-verify')) $('#s-tt-verify').addEventListener('click', async () => {
+      const v = (ttInput.value || '').trim();
+      if (!v) { toast('Incolla prima la chiave', 'bad'); return; }
+      const b = $('#s-tt-verify');
+      const old = b.textContent;
+      b.textContent = 'Verifico…'; b.disabled = true;
+      const res = await verifyTomTomKey(v);
+      b.textContent = old; b.disabled = false;
+      if (res.ok) {
+        db.settings.tomtomKey = v; saveDB();
+        toast('Chiave valida · ' + res.km + ' km in ' + res.min + ' min' + (res.delay > 0 ? ' · +' + res.delay + ' min di traffico' : ''), 'good');
+        vibrate(20);
+      } else {
+        toast('Chiave non valida: ' + esc(res.msg), 'bad');
+      }
+    });
+    if ($('#s-tt-clear')) $('#s-tt-clear').addEventListener('click', () => {
+      ttInput.value = ''; db.settings.tomtomKey = ''; saveDB();
+      toast('Chiave rimossa', 'good');
+    });
     $('#s-reset-day').addEventListener('click', () => {
       if (!S.giro) { toast('Apri prima un giro', 'bad'); return; }
       if (!confirm('Azzerare lo stato di oggi del giro “' + S.giro.name + '”? Le tappe restano, tornano solo “da fare”.')) return;
@@ -1676,7 +1888,10 @@ b,strong{font-weight:700}
 
   function exportData() {
     db.lastExport = Date.now();
-    const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
+    // la chiave non esce dal telefono, nemmeno nel backup
+    const copy = JSON.parse(JSON.stringify(db));
+    copy.settings = Object.assign({}, copy.settings, { tomtomKey: '' });
+    const blob = new Blob([JSON.stringify(copy, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = 'pasomaps-backup-' + todayISO() + '.json';
@@ -1697,7 +1912,9 @@ b,strong{font-weight:700}
         const data = JSON.parse(txt);
         if (!data || !Array.isArray(data.giri)) throw new Error('file non valido');
         if (!confirm('Sostituire i dati attuali con questo backup (' + data.giri.length + ' giri)?')) return;
+        const oldKey = db.settings.tomtomKey;
         db = migrate(data);
+        db.settings.tomtomKey = db.settings.tomtomKey || oldKey || '';
         db.lastExport = db.lastExport || 0;
         flushDB(); closeModal(); renderHome(); showScreen('home');
         toast('Backup importato', 'good');

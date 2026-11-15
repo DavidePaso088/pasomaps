@@ -26,7 +26,7 @@ profilo *truck*), la posizione è quella del telefono, la navigazione parla.
 | Oppure passaggio a **Google Maps** (con `avoid=highways`) | ✅ |
 | Ricalcolo percorso, alternativa più corta (tasto ⇄) | ✅ |
 | Autostrade escluse | ✅ sempre |
-| Traffico in tempo reale e colorazione rosso/arancione | ❌ (serve API a pagamento) |
+| Traffico in tempo reale e colorazione rosso/arancione | ✅ con chiave TomTom (gratuita); senza chiave stime senza traffico |
 | Foto delle consegne | ❌ (non richieste, aggiungibili) |
 | Sincronizzazione cloud | ❌ (dati solo sul telefono, backup JSON manuale) |
 
@@ -97,6 +97,20 @@ Doppio click su `index.html`. Nessuna installazione.
 6. All’arrivo la tappa viene segnata fatta e passa da sola alla successiva
    (disattivabile in Impostazioni).
 
+### Chiave TomTom (traffico)
+
+`Impostazioni` (⚙ in alto a destra) → sezione **Traffico (TomTom)** → incolla la chiave
+→ **Verifica chiave**. Se risponde con km e minuti, è valida.
+
+- La chiave è salvata **solo nella memoria del telefono** (localStorage), non nel
+  repository e **non nel backup JSON**.
+- Con la chiave: percorso e tempi passano a TomTom (camion, `avoid=motorways`,
+  traffico live), i tratti congestionati si colorano di arancione/rosso e l’ETA
+  mostra il ritardo.
+- Senza chiave, o se TomTom non risponde: si torna automaticamente a Valhalla,
+  tempi senza traffico. L’app non si blocca mai.
+- La chiave è legata al singolo dispositivo: su un secondo telefono va reinserita.
+
 **Pressione lunga su un giro** (o la matita ✎) = rinomina, cambia colore, elimina.
 **Tasto indietro di Android** = chiude il pannello, poi torna alla home.
 
@@ -125,14 +139,9 @@ diverso, cambiali subito.**
 
 ## 5. Limiti da sapere (senza girarci intorno)
 
-- **Traffico**: non c’è. I tempi sono stime senza traffico. Se in futuro vuoi il
-  traffico live e i tratti colorati, il fornitore più adatto è **TomTom**:
-  al 15/11/2026 il piano gratuito include 20.000 richieste/mese di Routing API
-  (profilo camion + `avoid=motorways`) e 20.000 di Traffic Flow, senza carta di
-  credito. Mapbox ha 100.000 richieste/mese gratis ed è l’unico che colora la
-  congestione segmento per segmento, ma **non ha profilo camion** (niente altezza/peso).
-  Google non ha profilo camion e i piani partono da 100 $/mese. I piani gratuiti
-  cambiano: verifica sempre sul sito del fornitore prima di affidarti.
+- **Traffico**: c’è, se inserisci la chiave TomTom gratuita (20.000 richieste/mese).
+  Senza chiave i tempi sono stime senza traffico. Il servizio è di TomTom: la qualità
+  dipende dalla loro copertura, non da PasoMaps.
 - **Dati stradali**: OpenStreetMap è ottimo ma non conosce tutte le ordinanze locali,
   le ZTL temporanee, i divieti di transito giornalieri o i cantieri. La segnaletica
   sul posto vince sempre.
@@ -173,8 +182,7 @@ Servizi esterni usati, tutti senza chiave:
 
 ## 7. Cose che aggiungerei dopo (in ordine di utilità)
 
-1. **Traffico live + colore del percorso** con TomTom (20.000 richieste/mese gratuite:
-   basta e avanza per un giro al giorno).
+1. **Traffico live + colore del percorso** — fatto, con TomTom (serve la chiave).
 2. **Foto della consegna** e firma, con compressione lato telefono.
 3. **Ciclo guidato dalla data**: “oggi tocca al Giro 7” calcolato dalla data di inizio.
 4. **Percorsi alternativi multipli** affiancati (oggi ce n’è uno alternativo).
