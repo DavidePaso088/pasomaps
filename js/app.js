@@ -895,6 +895,34 @@
     map.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [42, 86], paddingBottomRight: [42, 70], maxZoom: 16 });
   }
 
+  /* ---------- scelta manuale del pin (civico non presente nella mappa) ---------- */
+  function openPinPicker(start, onPick) {
+    const wrap = document.createElement('div');
+    wrap.id = 'pinpicker';
+    wrap.style.cssText = 'position:fixed;inset:0;z-index:90;display:flex;flex-direction:column;background:#0b1220';
+    wrap.innerHTML =
+      '<div style="padding:14px 16px;background:#0f1728;color:#eaf1ff;font:600 14px system-ui">' +
+      'Posiziona il pin sul punto esatto' +
+      '<div style="font-weight:400;color:#93a3bd;font-size:12px;margin-top:3px">Trascina la mappa e tocca il portone, oppure trascina il pin.</div></div>' +
+      '<div id="pinmap" style="flex:1;min-height:0"></div>' +
+      '<div style="display:flex;gap:9px;padding:12px 14px calc(14px + env(safe-area-inset-bottom,0px));background:#0f1728">' +
+      '<button id="pin-cancel" style="flex:1;padding:14px;border-radius:14px;border:1px solid #2b3a55;background:#131c2e;color:#eaf1ff;font:600 14px system-ui">Annulla</button>' +
+      '<button id="pin-ok" style="flex:1;padding:14px;border-radius:14px;border:0;background:linear-gradient(145deg,#1d4ed8,#2563eb);color:#fff;font:700 14px system-ui">Usa questa posizione</button></div>';
+    document.body.appendChild(wrap);
+    const pm = L.map('pinmap', { zoomControl: true }).setView([start.lat, start.lng], 17);
+    const url = mapProvider() === 'tomtom' ? TILES_TT + encodeURIComponent(tomtomKey()) : TILES_OSM;
+    L.tileLayer(url, { maxZoom: 19, attribution: mapProvider() === 'tomtom' ? '&copy; TomTom' : '&copy; OpenStreetMap' }).addTo(pm);
+    const marker = L.marker([start.lat, start.lng], { draggable: true }).addTo(pm);
+    setTimeout(() => { try { pm.invalidateSize(); } catch (e) { } }, 80);
+    const close = () => { try { pm.remove(); } catch (e) { } wrap.remove(); };
+    document.getElementById('pin-cancel').onclick = close;
+    document.getElementById('pin-ok').onclick = () => {
+      const p = marker.getLatLng();
+      close();
+      onPick(p.lat, p.lng);
+    };
+  }
+
   /* =============================== J. ETA =============================== */
   function updateEta() {
     const act = activeStops();
@@ -1037,8 +1065,30 @@
 
   /* =============================== L. EDITOR TAPPA =============================== */
   let geocodeLast = 0;
-  async function geocode(q) {
-    if (!q || q.trim().length < 3) return [];
+
+  async function geocodeTomTom(q) {
+    const url = 'https://api.tomtom.com/search/2/geocode/' + encodeURIComponent(q) + '.json' +
+      '?key=' + encodeURIComponent(tomtomKey()) + '&limit=6&language=it-IT&countrySet=IT&typeahead=false';
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('TomTom ' + res.status);
+    const j = await res.json();
+    return (j.results || []).map((r) => {
+      const a = r.address || {};
+      const street = [a.streetName, a.streetNumber].filter(Boolean).join(' ');
+      const label = a.freeformAddress || [street, a.municipality].filter(Boolean).join(', ');
+      const pos = r.position || {};
+      return {
+        label: label,
+        short: street || a.freeformAddress || '',
+        lat: pos.lat, lng: pos.lon,
+        num: a.streetNumber || '',
+        type: r.type || '',
+        src: 'tomtom'
+      };
+    }).filter((r) => isFinite(r.lat) && isFinite(r.lng));
+  }
+
+  async function geocodeOsm(q) {
     const out = [];
     try {
       const wait = Math.max(0, 1050 - (Date.now() - geocodeLast));
@@ -1051,7 +1101,7 @@
         (j || []).forEach((x) => {
           const a = x.address || {};
           const line = [a.road || a.pedestrian || a.footway, a.house_number].filter(Boolean).join(' ');
-          out.push({ label: x.display_name, short: line || x.name || x.display_name, lat: +x.lat, lng: +x.lon });
+          out.push({ label: x.display_name, short: line || x.name || x.display_name, lat: +x.lat, lng: +x.lon, num: a.house_number || '' });
         });
       }
     } catch (e) { console.warn('nominatim', e); }
@@ -1066,11 +1116,21 @@
             if (!c) return;
             const street = [p.street || p.name, p.housenumber].filter(Boolean).join(' ');
             const line = [street, p.city || p.town || p.village || p.district, p.postcode].filter(Boolean).join(', ');
-            out.push({ label: line || p.name, short: street || p.name || line, lat: c[1], lng: c[0] });
+            out.push({ label: line || p.name, short: street || p.name || line, lat: c[1], lng: c[0], num: p.housenumber || '' });
           });
         }
       } catch (e) { console.warn('photon', e); }
     }
+    return out;
+  }
+
+  async function geocode(q) {
+    if (!q || q.trim().length < 3) return [];
+    let out = [];
+    if (tomtomReady()) {
+      try { out = await geocodeTomTom(q); } catch (e) { console.warn('geocode tomtom', e); out = []; }
+    }
+    if (!out.length) out = await geocodeOsm(q);
     // dedupe ravvicinati
     const uniq = [];
     out.forEach((r) => {
@@ -1097,6 +1157,8 @@
       '<div class="chips"><button id="f-geo">📍 Posizione attuale</button><button id="f-paste">Incolla coordinate</button></div>' +
       '<div class="results" id="f-results"></div>' +
       '<div class="hint" id="f-coords">' + (isFinite(draft.lat) && draft.lat != null ? 'Coordinate: ' + draft.lat.toFixed(5) + ', ' + draft.lng.toFixed(5) : 'Nessuna posizione selezionata: cerca e tocca un risultato.') + '</div>' +
+      '<button class="btn" id="f-pin" style="margin-top:9px;padding:11px">📌 Posiziona il pin sulla mappa</button>' +
+      '<div class="hint" id="f-civic" style="display:none;color:#ffd9a8"></div>' +
       '</div>' +
       '<div class="field"><label>Note per la consegna</label>' +
       '<textarea id="f-notes" placeholder="Piano 3 interno B, citofono Rossi, lasciare i pacchi in portineria…">' + esc(draft.notes) + '</textarea>' +
@@ -1131,8 +1193,19 @@
       resBox.innerHTML = rs.map((r, i) => '<button class="result" data-i="' + i + '">' + esc(r.short || r.label) + '<span class="r2">' + esc(r.label) + '</span></button>').join('');
       $$('.result', resBox).forEach((b) => b.addEventListener('click', () => {
         const r = rs[+b.getAttribute('data-i')];
-        setCoords(r.lat, r.lng, r.short || r.label);
-        $('#f-addr').value = r.short || r.label;
+        const typed = ($('#f-addr').value || '').trim();
+        const keepTyped = !r.num && /\d/.test(typed);
+        $('#f-addr').value = keepTyped ? typed : (r.short || r.label);
+        setCoords(r.lat, r.lng, keepTyped ? '' : (r.short || r.label));
+        const civic = $('#f-civic');
+        if (civic) {
+          if (!r.num) {
+            civic.style.display = '';
+            civic.textContent = 'Civico non presente nella mappa: il pin è sulla via. Usa “Posiziona il pin” per metterlo sul portone.';
+          } else {
+            civic.style.display = 'none';
+          }
+        }
         resBox.innerHTML = '<div class="hint" style="color:#8ff0b1">✓ Posizione impostata</div>';
         vibrate(15);
       }));
@@ -1140,6 +1213,16 @@
 
     $('#f-search').addEventListener('click', doSearch);
     $('#f-addr').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
+    $('#f-pin').addEventListener('click', () => {
+      if (!picked) { toast('Prima cerca e seleziona la via', 'bad'); return; }
+      openPinPicker(picked, (lat, lng) => {
+        picked = { lat: lat, lng: lng };
+        $('#f-coords').textContent = 'Coordinate: ' + lat.toFixed(5) + ', ' + lng.toFixed(5) + ' · scelte a mano';
+        const civic = $('#f-civic');
+        if (civic) { civic.style.display = ''; civic.textContent = 'Pin spostato a mano: il percorso arriva esattamente qui.'; }
+        toast('Posizione aggiornata', 'good');
+      });
+    });
     $('#f-geo').addEventListener('click', () => {
       if (!navigator.geolocation) { toast('GPS non disponibile', 'bad'); return; }
       toast('Rilevo la posizione…');
