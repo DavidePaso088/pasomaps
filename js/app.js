@@ -596,10 +596,12 @@
   };
   const Nav = { active: false, watchId: null, route: null, busy: false, offCount: 0, spoken: {}, target: null };
 
+  const hasCoords = (s) => !!s && s.lat != null && s.lng != null && isFinite(+s.lat) && isFinite(+s.lng);
+
   function activeStops() {
     if (!S.giro) return [];
     const sess = S.session || { done: {}, skipped: [] };
-    return S.giro.stops.filter((s) => !sess.done[s.id] && sess.skipped.indexOf(s.id) === -1);
+    return S.giro.stops.filter((s) => hasCoords(s) && !sess.done[s.id] && sess.skipped.indexOf(s.id) === -1);
   }
   function stopIndexLabel(id) {
     const i = (S.giro ? S.giro.stops : []).findIndex((s) => s.id === id);
@@ -753,7 +755,7 @@
       updateEta();
       return;
     }
-    if (stops.some((s) => !isFinite(s.lat) || !isFinite(s.lng))) {
+    if (stops.some((s) => !hasCoords(s))) {
       setRouteState('Alcune tappe non hanno un indirizzo valido: aprile e correggile', 'bad');
       return;
     }
@@ -856,7 +858,7 @@
     stopMarkers = [];
     const act = activeStops();
     S.giro.stops.forEach((st) => {
-      if (!isFinite(st.lat)) return;
+      if (!hasCoords(st)) return;
       let state = 'plain';
       if (S.session && S.session.done[st.id]) state = 'done';
       else if (S.session && S.session.skipped.indexOf(st.id) !== -1) state = 'skip';
@@ -999,7 +1001,7 @@
     } else if (S.shownRoute) {
       S.shownRoute.legs.forEach((l) => l.coords.forEach((c) => pts.push([c.lat, c.lng])));
     }
-    if (!pts.length && S.giro) S.giro.stops.forEach((s) => { if (isFinite(s.lat)) pts.push([s.lat, s.lng]); });
+    if (!pts.length && S.giro) S.giro.stops.forEach((s) => { if (hasCoords(s)) pts.push([s.lat, s.lng]); });
     if (S.me) pts.push([S.me.lat, S.me.lng]);
     if (!pts.length) return;
     if (pts.length === 1) { map.easeTo({ center: [pts[0][1], pts[0][0]], zoom: 16, duration: 0 }); return; }
@@ -1049,6 +1051,7 @@
     $('#fab-badge').textContent = act.length;
     if (!act.length) {
       const any = S.giro && S.giro.stops ? S.giro.stops.length : 0;
+      const noPos = (S.giro && S.giro.stops) ? S.giro.stops.filter((s) => !hasCoords(s)).length : 0;
       if (!any) {
         $('#eta-label').textContent = 'Nessuna tappa';
         $('#eta-time').textContent = '+';
@@ -1056,6 +1059,13 @@
         $('#eta-km').textContent = '0 tappe';
         $('#eta-arr').textContent = '';
         $('#eta-stop').textContent = 'Aggiungi la prima tappa con “+ Aggiungi”';
+      } else if (noPos === any) {
+        $('#eta-label').textContent = 'Tappe senza posizione';
+        $('#eta-time').textContent = '!';
+        $('#eta-unit').textContent = '';
+        $('#eta-km').textContent = noPos + ' tappe';
+        $('#eta-arr').textContent = '';
+        $('#eta-stop').textContent = 'Apri Tappe → “Riprova indirizzi mancanti”';
       } else {
         $('#eta-label').textContent = 'Giro finito';
         $('#eta-time').textContent = '✓';
@@ -1164,6 +1174,8 @@
         const leg = S.previewFromMe ? S.shownRoute.legs[actIdx] : S.shownRoute.legs[actIdx - 1];
         if (leg) meta = '<div class="stop-meta"><span>' + fmtKmVal(leg.total / 1000) + '</span><span>·</span><span>' + timeParts(leg.sec).main + ' ' + timeParts(leg.sec).unit + '</span></div>';
         else if (actIdx === 0) meta = '<div class="stop-meta"><span>partenza</span></div>';
+      } else if (!hasCoords(st)) {
+        meta = '<div class="stop-meta" style="color:#ffc98b"><span>posizione mancante</span></div>';
       }
       return '<div class="stop-item' + (cur ? ' cur' : '') + (done ? ' done' : '') + (skipped ? ' skipped' : '') + '" data-id="' + st.id + '">' +
         '<div class="stop-idx">' + (done ? '✓' : skipped ? '–' : idx) + '</div>' +
@@ -1180,6 +1192,12 @@
         '</div>' +
         '</div>';
     }).join('');
+    const missingN = S.giro.stops.filter((s) => !hasCoords(s)).length;
+    const retryBtn = $('#btn-retry');
+    if (retryBtn) {
+      retryBtn.style.display = missingN ? '' : 'none';
+      retryBtn.textContent = 'Riprova indirizzi mancanti (' + missingN + ')';
+    }
     scrollToCurrent();
   }
 
@@ -1206,11 +1224,36 @@
   async function resolveZone(text) {
     const t = String(text || '').trim();
     if (!t) return null;
-    let c = await cityCenter(t);
-    if (c) return c;
-    const first = t.split(/[\s,–-]+/).filter(Boolean)[0];
-    if (first && first.length > 2 && first.toLowerCase() !== t.toLowerCase()) c = await cityCenter(first);
-    return c;
+    const parts = t.split(/[\s,–-]+/).filter(Boolean);
+    const full = await cityCenter(t);
+    if (full) {
+      const cl = (full.city || '').toLowerCase();
+      if (!cl || parts.some((w) => w.length > 2 && cl.indexOf(w.toLowerCase()) !== -1)) return full;
+    }
+    for (const w of parts) {
+      if (w.length < 3 || /^(giro|giorno|zona|settimana|giri)$/i.test(w)) continue;
+      const c = await cityCenter(w);
+      if (c && c.city) return c;
+    }
+    return full || null;
+  }
+
+  function pickBest(rs, center, cityLabel) {
+    if (!rs || !rs.length) return { best: null, outside: false };
+    const cl = ((center && center.city) || cityLabel || '').toLowerCase();
+    if (cl) {
+      const matches = rs.filter((r) => (r.city || '').toLowerCase() === cl);
+      if (matches.length) {
+        const best = center ? matches.slice().sort((a, b) => hav(center, a) - hav(center, b))[0] : matches[0];
+        return { best: best, outside: false };
+      }
+    }
+    if (center) {
+      const sorted = rs.slice().sort((a, b) => hav(center, a) - hav(center, b));
+      if (hav(center, sorted[0]) <= 45000) return { best: sorted[0], outside: false };
+      return { best: null, outside: true };
+    }
+    return { best: rs[0], outside: false };
   }
 
   async function geocodeNear(q, center, radiusKm) {
@@ -1227,7 +1270,22 @@
             const a = r.address || {};
             const street = [a.streetName, a.streetNumber].filter(Boolean).join(' ');
             const pos = r.position || {};
-            return { label: a.freeformAddress || street, short: street || a.freeformAddress || '', lat: pos.lat, lng: pos.lon, num: a.streetNumber || '' };
+            return { label: a.freeformAddress || street, short: street || a.freeformAddress || '', lat: pos.lat, lng: pos.lon, num: a.streetNumber || '', city: a.municipality || '' };
+          }).filter((r) => isFinite(r.lat) && isFinite(r.lng));
+          if (out.length) return out;
+        }
+      } catch (e) { }
+      try {
+        const u = 'https://api.tomtom.com/search/2/geocode/' + encodeURIComponent(q) + '.json' +
+          '?key=' + encodeURIComponent(tomtomKey()) + '&limit=6&language=it-IT&countrySet=IT';
+        const res = await fetch(u);
+        if (res.ok) {
+          const j = await res.json();
+          const out = (j.results || []).map((r) => {
+            const a = r.address || {};
+            const street = [a.streetName, a.streetNumber].filter(Boolean).join(' ');
+            const pos = r.position || {};
+            return { label: a.freeformAddress || street, short: street || a.freeformAddress || '', lat: pos.lat, lng: pos.lon, num: a.streetNumber || '', city: a.municipality || '' };
           }).filter((r) => isFinite(r.lat) && isFinite(r.lng));
           if (out.length) return out;
         }
@@ -1382,7 +1440,7 @@
 
     openModal(html);
     const resBox = $('#f-results');
-    let picked = (draft.lat != null && isFinite(draft.lat)) ? { lat: draft.lat, lng: draft.lng } : null;
+    let picked = hasCoords(draft) ? { lat: draft.lat, lng: draft.lng } : null;
 
     function setCoords(lat, lng, addr) {
       picked = { lat: lat, lng: lng };
@@ -2207,17 +2265,9 @@
           const q = t.s.query + ((t.cityLabel && t.s.query.toLowerCase().indexOf(t.cityLabel.toLowerCase()) === -1) ? ', ' + t.cityLabel : '');
           try {
             const rs = await geocodeNear(q, t.center, 35);
-            let best = null;
-            if (rs && rs.length) {
-              if (t.center) {
-                const sorted = rs.slice().sort((a, b) => hav(t.center, a) - hav(t.center, b));
-                if (hav(t.center, sorted[0]) <= 45000) best = sorted[0];
-                else t.outside = true;
-              } else {
-                best = rs[0];
-              }
-            }
-            t.res = best;
+            const picked = pickBest(rs, t.center, t.cityLabel);
+            t.res = picked.best;
+            if (picked.outside) t.outside = true;
           } catch (e) { t.res = null; }
           tick();
         }
@@ -2226,10 +2276,12 @@
     }
 
     let withNum = 0, noNum = 0, failed = 0, outside = 0;
+    const failedAddrs = [];
     tasks.forEach((t) => {
       const r = t.res || null;
       if (r) { if (r.num) withNum++; else noNum++; } else if (geoOn) failed++;
       if (t.outside) outside++;
+      if (geoOn && !r && t.s.address) failedAddrs.push(t.s.address + (t.cityLabel ? ' — ' + t.cityLabel : ''));
       t.ng.stops.push({
         id: uid(),
         name: (t.s.name && t.city && t.s.name.toLowerCase() === t.city.toLowerCase()) ? '' : (t.s.name || ''),
@@ -2246,6 +2298,7 @@
     openModal('<div class="modal-head"><b>Importazione completata</b><button class="x" id="i-done">✕</button></div>' +
       '<p class="hint" style="margin-top:-6px"><b>' + created.length + ' giri</b> e <b>' + totStops + ' tappe</b> importati.</p>' +
       (geoOn ? '<p class="hint">Civico esatto: <b>' + withNum + '</b><br>Senza civico: <b>' + noNum + '</b><br>Non trovate: <b>' + failed + '</b>' + (outside ? '<br>Fuori zona: <b>' + outside + '</b>' : '') + '</p>' : '<p class="hint">Nessuna ricerca coordinate: apri le tappe e usa “Posiziona il pin”.</p>') +
+      (failedAddrs.length ? '<details style="margin-top:6px"><summary style="cursor:pointer;color:#9db4d6;font-size:12px">Indirizzi da controllare (' + failedAddrs.length + ')</summary><div style="max-height:150px;overflow:auto;font-size:11.5px;color:#93a3bd;line-height:1.5;margin-top:6px">' + failedAddrs.slice(0, 40).map((a) => '• ' + esc(a)).join('<br>') + (failedAddrs.length > 40 ? '<br>…' : '') + '</div></details>' : '') +
       '<p class="hint">Le tappe senza civico, non trovate o fuori zona restano da sistemare: apri la tappa e sposta il pin sul portone.</p>' +
       '<button class="btn primary" id="i-done2" style="width:100%;margin-top:10px">Vai ai giri</button>');
     const done2 = () => { closeModal(); renderHome(); };
@@ -2253,6 +2306,40 @@
     if ($('#i-done2')) $('#i-done2').addEventListener('click', done2);
     toast('Importate ' + totStops + ' tappe in ' + created.length + ' giri', 'good');
     vibrate(30);
+  }
+
+  async function retryMissing() {
+    const g = S.giro;
+    if (!g) return;
+    const missing = g.stops.filter((s) => !hasCoords(s) && s.address);
+    if (!missing.length) { toast('Nessuna tappa da correggere', 'good'); return; }
+    openModal('<div class="modal-head"><b>Riprovo gli indirizzi</b></div>' +
+      '<p class="hint" id="r-status">0 / ' + missing.length + '</p>' +
+      '<div style="height:8px;background:#1e293b;border-radius:6px;overflow:hidden"><div id="r-bar" style="height:100%;width:0;background:linear-gradient(90deg,#2563eb,#22d3ee);transition:width .2s"></div></div>' +
+      '<p class="hint">Restano nella zona del giro.</p>');
+    const zoneText = (g.city || (!GIRO_RE.test(g.name) ? g.name : '')).trim();
+    const center = zoneText ? await resolveZone(zoneText) : null;
+    const cityLabel = center && center.city ? center.city : zoneText;
+    let ok = 0, outside = 0;
+    for (let i = 0; i < missing.length; i++) {
+      const s = missing[i];
+      const q = s.address + ((cityLabel && s.address.toLowerCase().indexOf(cityLabel.toLowerCase()) === -1) ? ', ' + cityLabel : '');
+      let best = null;
+      try {
+        const rs = await geocodeNear(q, center, 35);
+        const picked = pickBest(rs, center, cityLabel);
+        best = picked.best;
+        if (picked.outside) outside++;
+      } catch (e) { }
+      if (best) { s.lat = best.lat; s.lng = best.lng; ok++; }
+      const st = $('#r-status'); if (st) st.textContent = (i + 1) + ' / ' + missing.length;
+      const bar = $('#r-bar'); if (bar) bar.style.width = Math.round(((i + 1) / missing.length) * 100) + '%';
+      if (tomtomReady()) await sleep(60);
+    }
+    saveDB();
+    closeModal();
+    renderStops(); drawMarkers(); computePreview(true);
+    toast(ok + '/' + missing.length + ' indirizzi trovati' + (outside ? ' · ' + outside + ' fuori zona' : ''), ok ? 'good' : 'bad');
   }
 
 
@@ -2361,6 +2448,7 @@
       vibrate(15);
     });
     $('#btn-optimize').addEventListener('click', optimizeOrder);
+    $('#btn-retry').addEventListener('click', retryMissing);
     $('#btn-recenter').addEventListener('click', () => {
       if (S.me) { map.easeTo({ center: [S.me.lng, S.me.lat], zoom: Math.max(map.getZoom(), 16), pitch: 0, bearing: 0, duration: 500 }); S.follow = true; }
       else { fitAll(); }
