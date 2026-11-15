@@ -1682,7 +1682,7 @@
   }
 
   function onFix(pos) {
-    S.me = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, ts: Date.now(), head: pos.coords.heading };
+    S.me = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, speed: pos.coords.speed, ts: Date.now(), head: pos.coords.heading };
     S.meSnap = null;
     if (Nav.active && Nav.route && Nav.route.coords && Nav.route.coords.length > 2) {
       const path = { coords: Nav.route.coords, cum: Nav.route.cum, total: Nav.route.total };
@@ -1720,6 +1720,7 @@
       Nav.route.dest = dest;
       Nav.route.sections = r.sections;
       Nav.spoken = {};
+      Nav.lastAlong = null;
       drawNav(leg);
       saveNavCache(Nav.route);
       navUpdate();
@@ -1734,6 +1735,7 @@
           cached.dest = dest;
           Nav.route = cached;
           Nav.spoken = {};
+          Nav.lastAlong = null;
           drawNav(cached);
           navUpdate();
           if (S.follow !== false) applyNavCamera();
@@ -1749,6 +1751,17 @@
     if (!Nav.route || !S.me) return;
     const path = { coords: Nav.route.coords, cum: Nav.route.cum, total: Nav.route.total };
     const pr = projectOnPath(path, S.me);
+    // inversione a U: stiamo tornando indietro lungo il percorso
+    const speed = (typeof S.me.speed === 'number' && isFinite(S.me.speed)) ? S.me.speed : 0;
+    if (Nav.lastAlong == null) Nav.lastAlong = pr.along;
+    else if (speed > 3 && pr.along < Nav.lastAlong - 25) {
+      Nav.lastAlong = null;
+      toast('Inversione rilevata · ricalcolo', 'bad');
+      refreshNavRoute();
+      return;
+    } else {
+      Nav.lastAlong = pr.along;
+    }
     const remaining = Math.max(0, path.total - pr.along);
     const ratio = path.total > 0 ? remaining / path.total : 0;
     const remSec = Math.max(0, Nav.route.sec * ratio);
@@ -1795,7 +1808,7 @@
       return;
     }
     // fuori percorso
-    if (pr.d > 65 && S.me.acc < 60) Nav.offCount++; else Nav.offCount = 0;
+    if (pr.d > 55 && S.me.acc < 60) Nav.offCount++; else Nav.offCount = 0;
     if (Nav.offCount >= 4) { Nav.offCount = 0; refreshNavRoute(); }
   }
   function digest(s) { let h = 0; s = String(s || ''); for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0; return h; }
@@ -2362,6 +2375,81 @@
     toast(ok + '/' + list.length + ' ' + (mode === 'all' ? 'aggiornate' : 'trovate') + (outside ? ' · ' + outside + ' fuori zona' : '') + (cleared ? ' · ' + cleared + ' azzerate' : ''), ok ? 'good' : 'bad');
   }
 
+  const lon2x = (lon, z) => Math.floor((lon + 180) / 360 * Math.pow(2, z));
+  const lat2y = (lat, z) => {
+    const r = lat * Math.PI / 180;
+    return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * Math.pow(2, z));
+  };
+
+  async function prepareOffline() {
+    if (!S.giro) return;
+    if (mapProvider() !== 'openfreemap') { toast('Per l’offline usa OpenFreeMap come base mappa', 'bad'); return; }
+    const pts = (S.shownRoute && S.shownRoute.coords && S.shownRoute.coords.length > 1)
+      ? S.shownRoute.coords
+      : S.giro.stops.filter(hasCoords);
+    if (!pts.length) { toast('Nessuna tappa posizionata', 'bad'); return; }
+    let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+    pts.forEach((p) => { minLat = Math.min(minLat, p.lat); maxLat = Math.max(maxLat, p.lat); minLng = Math.min(minLng, p.lng); maxLng = Math.max(maxLng, p.lng); });
+    const pad = 0.008;
+    openModal('<div class="modal-head"><b>Preparo la mappa offline</b></div>' +
+      '<p class="hint" id="o-status">Scarico i tile della zona…</p>' +
+      '<div style="height:8px;background:#1e293b;border-radius:6px;overflow:hidden"><div id="o-bar" style="height:100%;width:0;background:linear-gradient(90deg,#2563eb,#22d3ee);transition:width .2s"></div></div>' +
+      '<p class="hint" id="o-size">0 MB</p>');
+    let tmpl = null;
+    try {
+      const tj = await (await fetch('https://tiles.openfreemap.org/planet')).json();
+      tmpl = tj && tj.tiles && tj.tiles[0];
+    } catch (e) { }
+    if (!tmpl) { closeModal(); toast('Servizio mappe non raggiungibile', 'bad'); return; }
+    const list = [];
+    for (let z = 10; z <= 14; z++) {
+      const x0 = lon2x(minLng - pad, z), x1 = lon2x(maxLng + pad, z);
+      const y0 = lat2y(maxLat + pad, z), y1 = lat2y(minLat - pad, z);
+      for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) list.push(tmpl.replace('{z}', z).replace('{x}', x).replace('{y}', y));
+    }
+    const uniq = Array.from(new Set(list)).slice(0, 3000);
+    const cache = await caches.open('pasomaps-tiles');
+    let idx = 0, ok = 0, fail = 0, bytes = 0;
+    const cap = 45 * 1024 * 1024;
+    const bar = $('#o-bar'), status = $('#o-status'), sizeEl = $('#o-size');
+    const upd = () => {
+      if (bar) bar.style.width = Math.round((idx / uniq.length) * 100) + '%';
+      if (status) status.textContent = 'Scarico la mappa… ' + idx + ' / ' + uniq.length;
+      if (sizeEl) sizeEl.textContent = (bytes / 1048576).toFixed(1) + ' MB';
+    };
+    const work = async () => {
+      while (idx < uniq.length && bytes < cap) {
+        const u = uniq[idx++];
+        try {
+          const hit = await cache.match(u);
+          if (hit) { bytes += (await hit.clone().blob()).size; ok++; }
+          else {
+            const res = await fetch(u);
+            if (res.ok) {
+              const blob = await res.clone().blob();
+              bytes += blob.size; ok++;
+              await cache.put(u, res);
+            } else fail++;
+          }
+        } catch (e) { fail++; }
+        upd();
+      }
+    };
+    await Promise.all([work(), work(), work(), work()]);
+    const mb = (bytes / 1048576).toFixed(1);
+    try { localStorage.setItem('pasomaps.offline.' + S.giro.id, JSON.stringify({ at: Date.now(), tiles: ok, bytes: bytes })); } catch (e) { }
+    const btn = $('#btn-offline');
+    if (btn) btn.style.color = '#22c55e';
+    openModal('<div class="modal-head"><b>Offline pronto</b><button class="x" id="o-done">✕</button></div>' +
+      '<p class="hint" style="margin-top:-6px"><b>' + ok + '</b> tile scaricati · <b>' + mb + ' MB</b>' + (fail ? '<br>' + fail + ' non scaricati' : '') + '</p>' +
+      '<p class="hint">Ora la zona del giro resta visibile senza rete. I ricalcoli e il traffico richiedono comunque connessione.</p>' +
+      '<button class="btn primary" id="o-done2" style="width:100%;margin-top:10px">Chiudi</button>');
+    if ($('#o-done')) $('#o-done').addEventListener('click', closeModal);
+    if ($('#o-done2')) $('#o-done2').addEventListener('click', closeModal);
+    toast('Offline pronto · ' + ok + ' tile · ' + mb + ' MB', 'good');
+  }
+
+
 
   function toggleSkip(id) {
     if (!S.session) return;
@@ -2474,6 +2562,12 @@
       else { fitAll(); }
     });
     $('#btn-alt').addEventListener('click', toggleAlt);
+    $('#btn-offline').addEventListener('click', prepareOffline);
+    $('#nb-refresh').addEventListener('click', () => {
+      if (!Nav.active) return;
+      toast('Ricalcolo percorso…');
+      refreshNavRoute();
+    });
     $('#btn-nav').addEventListener('click', () => {
       if (Nav.active) { stopNav(); toast('Navigazione fermata'); return; }
       openNavMenu(activeStops()[0]);

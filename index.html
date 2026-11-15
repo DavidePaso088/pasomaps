@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css">
-<link rel="stylesheet" href="css/app.css?v=32">
+<link rel="stylesheet" href="css/app.css?v=34">
 </head>
 <body>
 
@@ -47,12 +47,14 @@
     <div class="map-top">
       <button class="icon-btn onmap" id="btn-back" aria-label="Indietro">‹</button>
       <div class="map-title"><b id="giro-name">—</b><span id="giro-city">—</span></div>
+      <button class="icon-btn onmap" id="btn-offline" aria-label="Prepara offline" title="Prepara offline">⬇</button>
       <button class="icon-btn onmap" id="btn-alt" aria-label="Percorso alternativo">⇄</button>
       <button class="icon-btn onmap" id="btn-recenter" aria-label="Centra sulla mia posizione">◎</button>
     </div>
     <div class="nav-banner" id="nav-banner">
       <div class="arrow" id="nb-arrow">↱</div>
       <div class="txt"><b id="nb-title">—</b><span id="nb-sub">—</span></div>
+      <button class="nb-refresh" id="nb-refresh" aria-label="Ricalcola percorso" title="Ricalcola percorso">↻</button>
     </div>
     <div class="map-hint" id="route-state">Calcolo percorso…</div>
   </div>
@@ -108,6 +110,6 @@
 <div id="toasts"></div>
 
 <script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
-<script src="js/app.js?v=32"></script>
+<script src="js/app.js?v=34"></script>
 </body>
 </html>

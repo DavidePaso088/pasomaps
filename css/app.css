@@ -178,6 +178,11 @@ b,strong{font-weight:700}
 .nav-banner .txt{flex:1;min-width:0}
 .nav-banner .txt b{display:block;font-size:13.5px;line-height:1.25}
 .nav-banner .txt span{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+.nb-refresh{
+  width:36px;height:36px;border-radius:11px;flex:0 0 auto;display:grid;place-items:center;
+  background:rgba(59,130,246,.18);border:1px solid rgba(59,130,246,.45);color:#bfe0ff;font-size:17px;
+}
+.nb-refresh:active{transform:scale(.94)}
 
 /* pannello inferiore ~22% */
 .bottom-panel{
