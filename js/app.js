@@ -53,6 +53,7 @@
   const DEFAULT_TRUCK = { height: 2.8, width: 2.1, length: 6.0, weight: 3.5, axle_load: 1.8 };
   const DEFAULT_SETTINGS = { voice: true, brightness: 1, autoAdvance: true, trafficKey: '', tomtomKey: '', mapStyle: 4, mapProvider: 'openfreemap', lastGiroId: null };
   const PALETTE = ['#3b82f6', '#22d3ee', '#a78bfa', '#f472b6', '#f59e0b', '#34d399', '#60a5fa', '#fb7185', '#c084fc', '#facc15', '#2dd4bf', '#f97316', '#818cf8', '#4ade80'];
+  const APP_BUILD = '1.34';
   const ROUTE_CACHE = 'pasomaps.route.';
   const NAV_CACHE = 'pasomaps.nav.';
   let offlineWarned = 0;
@@ -1193,10 +1194,18 @@
         '</div>';
     }).join('');
     const missingN = S.giro.stops.filter((s) => !hasCoords(s)).length;
+    const withAddr = S.giro.stops.filter((s) => s.address && !s.pinned).length;
     const retryBtn = $('#btn-retry');
     if (retryBtn) {
-      retryBtn.style.display = missingN ? '' : 'none';
-      retryBtn.textContent = 'Riprova indirizzi mancanti (' + missingN + ')';
+      if (missingN) {
+        retryBtn.style.display = '';
+        retryBtn.textContent = 'Riprova indirizzi mancanti (' + missingN + ')';
+      } else if (withAddr) {
+        retryBtn.style.display = '';
+        retryBtn.textContent = 'Ricalcola posizioni (' + withAddr + ')';
+      } else {
+        retryBtn.style.display = 'none';
+      }
     }
     scrollToCurrent();
   }
@@ -1461,6 +1470,7 @@
         const keepTyped = !r.num && /\d/.test(typed);
         $('#f-addr').value = keepTyped ? typed : (r.short || r.label);
         setCoords(r.lat, r.lng, keepTyped ? '' : (r.short || r.label));
+        draft.pinned = false;
         const civic = $('#f-civic');
         if (civic) {
           if (!r.num) {
@@ -1481,6 +1491,7 @@
       if (!picked) { toast('Prima cerca e seleziona la via', 'bad'); return; }
       openPinPicker(picked, (lat, lng) => {
         picked = { lat: lat, lng: lng };
+        draft.pinned = true;
         $('#f-coords').textContent = 'Coordinate: ' + lat.toFixed(5) + ', ' + lng.toFixed(5) + ' · scelte a mano';
         const civic = $('#f-civic');
         if (civic) { civic.style.display = ''; civic.textContent = 'Pin spostato a mano: il percorso arriva esattamente qui.'; }
@@ -1548,10 +1559,10 @@
         if (!$('#f-addr').value) $('#f-addr').value = rs[0].short || rs[0].label;
       }
       if (isNew) {
-        S.giro.stops.push({ id: draft.id, name: name || address, address: address, lat: picked.lat, lng: picked.lng, notes: notes });
+        S.giro.stops.push({ id: draft.id, name: name || address, address: address, lat: picked.lat, lng: picked.lng, notes: notes, pinned: !!draft.pinned });
         S.session.skipped = S.session.skipped.filter((id) => id !== draft.id);
       } else {
-        st.name = name || address; st.address = address; st.lat = picked.lat; st.lng = picked.lng; st.notes = notes;
+        st.name = name || address; st.address = address; st.lat = picked.lat; st.lng = picked.lng; st.notes = notes; st.pinned = !!draft.pinned;
       }
       saveDB(); closeModal();
       renderStops(); drawMarkers(); renderGiroChrome();
@@ -1935,7 +1946,7 @@
       '<button class="btn danger" id="s-wipe" style="width:100%;margin-top:9px">Cancella tutti i dati</button>' +
       '<p class="hint">I dati stanno solo in questo telefono: se cancelli la cache del browser o cambi telefono, senza backup li perdi.</p>' +
       '<div class="section-t">Info</div>' +
-      '<p class="hint">Base: OpenStreetMap + Valhalla (profilo camion, autostrade escluse). Con la chiave TomTom, percorso e tempi usano TomTom con <b>traffico live</b>, sempre con camion e autostrade escluse; se TomTom non risponde l’app torna da sola al calcolo senza traffico.<br><br>Il routing conosce altezza, larghezza, lunghezza e peso del mezzo, ma <b>non tutte le ordinanze locali, ZTL o divieti temporanei</b>: la segnaletica sul posto resta l’unica verità.</p>';
+      '<p class="hint">Versione <b>' + APP_BUILD + '</b> · mappa MapLibre + OpenFreeMap.<br>Base: OpenStreetMap + Valhalla (profilo camion, autostrade escluse). Con la chiave TomTom, percorso e tempi usano TomTom con <b>traffico live</b>, sempre con camion e autostrade escluse; se TomTom non risponde l’app torna da sola al calcolo senza traffico.<br><br>Il routing conosce altezza, larghezza, lunghezza e peso del mezzo, ma <b>non tutte le ordinanze locali, ZTL o divieti temporanei</b>: la segnaletica sul posto resta l’unica verità.</p>';
     openModal(html);
     $('#s-close').addEventListener('click', closeModal);
     const bindTruck = (id, key, min, max) => $('#' + id).addEventListener('change', (e) => {
@@ -2312,17 +2323,25 @@
     const g = S.giro;
     if (!g) return;
     const missing = g.stops.filter((s) => !hasCoords(s) && s.address);
-    if (!missing.length) { toast('Nessuna tappa da correggere', 'good'); return; }
-    openModal('<div class="modal-head"><b>Riprovo gli indirizzi</b></div>' +
-      '<p class="hint" id="r-status">0 / ' + missing.length + '</p>' +
+    const all = g.stops.filter((s) => s.address && !s.pinned);
+    let list = missing;
+    let mode = 'missing';
+    if (!missing.length) {
+      if (!all.length) { toast('Nessuna tappa con indirizzo', 'bad'); return; }
+      if (!confirm('Ricalcolare le posizioni di ' + all.length + ' tappe nella zona del giro?\nLe posizioni attuali verranno sostituite. I pin messi a mano restano.')) return;
+      list = all;
+      mode = 'all';
+    }
+    openModal('<div class="modal-head"><b>' + (mode === 'all' ? 'Ricalcolo posizioni' : 'Riprovo gli indirizzi') + '</b></div>' +
+      '<p class="hint" id="r-status">0 / ' + list.length + '</p>' +
       '<div style="height:8px;background:#1e293b;border-radius:6px;overflow:hidden"><div id="r-bar" style="height:100%;width:0;background:linear-gradient(90deg,#2563eb,#22d3ee);transition:width .2s"></div></div>' +
-      '<p class="hint">Restano nella zona del giro.</p>');
+      '<p class="hint">Ricerca limitata alla zona del giro.</p>');
     const zoneText = (g.city || (!GIRO_RE.test(g.name) ? g.name : '')).trim();
     const center = zoneText ? await resolveZone(zoneText) : null;
     const cityLabel = center && center.city ? center.city : zoneText;
-    let ok = 0, outside = 0;
-    for (let i = 0; i < missing.length; i++) {
-      const s = missing[i];
+    let ok = 0, outside = 0, cleared = 0;
+    for (let i = 0; i < list.length; i++) {
+      const s = list[i];
       const q = s.address + ((cityLabel && s.address.toLowerCase().indexOf(cityLabel.toLowerCase()) === -1) ? ', ' + cityLabel : '');
       let best = null;
       try {
@@ -2332,14 +2351,15 @@
         if (picked.outside) outside++;
       } catch (e) { }
       if (best) { s.lat = best.lat; s.lng = best.lng; ok++; }
-      const st = $('#r-status'); if (st) st.textContent = (i + 1) + ' / ' + missing.length;
-      const bar = $('#r-bar'); if (bar) bar.style.width = Math.round(((i + 1) / missing.length) * 100) + '%';
+      else if (mode === 'all' && center && hasCoords(s) && hav(center, s) > 45000) { s.lat = null; s.lng = null; cleared++; }
+      const st = $('#r-status'); if (st) st.textContent = (i + 1) + ' / ' + list.length;
+      const bar = $('#r-bar'); if (bar) bar.style.width = Math.round(((i + 1) / list.length) * 100) + '%';
       if (tomtomReady()) await sleep(60);
     }
     saveDB();
     closeModal();
     renderStops(); drawMarkers(); computePreview(true);
-    toast(ok + '/' + missing.length + ' indirizzi trovati' + (outside ? ' · ' + outside + ' fuori zona' : ''), ok ? 'good' : 'bad');
+    toast(ok + '/' + list.length + ' ' + (mode === 'all' ? 'aggiornate' : 'trovate') + (outside ? ' · ' + outside + ' fuori zona' : '') + (cleared ? ' · ' + cleared + ' azzerate' : ''), ok ? 'good' : 'bad');
   }
 
 
