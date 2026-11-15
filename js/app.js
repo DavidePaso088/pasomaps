@@ -54,6 +54,7 @@
   const DEFAULT_SETTINGS = { voice: true, brightness: 0.9, autoAdvance: true, trafficKey: '', tomtomKey: '', mapStyle: 2, lastGiroId: null };
   const PALETTE = ['#3b82f6', '#22d3ee', '#a78bfa', '#f472b6', '#f59e0b', '#34d399', '#60a5fa', '#fb7185', '#c084fc', '#facc15', '#2dd4bf', '#f97316', '#818cf8', '#4ade80'];
   const ROUTE_CACHE = 'pasomaps.route.';
+  const NAV_CACHE = 'pasomaps.nav.';
   let offlineWarned = 0;
 
   let db = null;
@@ -800,9 +801,54 @@
     try {
       const ids = new Set((db.giri || []).map((g) => g.id));
       Object.keys(localStorage).forEach((k) => {
-        if (k.indexOf(ROUTE_CACHE) === 0 && !ids.has(k.slice(ROUTE_CACHE.length))) localStorage.removeItem(k);
+        const isRoute = k.indexOf(ROUTE_CACHE) === 0;
+        const isNav = k.indexOf(NAV_CACHE) === 0;
+        if (!isRoute && !isNav) return;
+        const id = k.slice((isRoute ? ROUTE_CACHE : NAV_CACHE).length);
+        if (!ids.has(id)) localStorage.removeItem(k);
       });
     } catch (e) { }
+  }
+
+  function saveNavCache(leg) {
+    if (!S.giro || !leg || !leg.dest || !leg.coords || leg.coords.length < 2) return;
+    try {
+      const payload = {
+        at: Date.now(),
+        destId: leg.dest.id,
+        destName: leg.dest.name || leg.dest.address || '',
+        total: leg.total, km: leg.km, sec: leg.sec, delay: leg.delay || 0,
+        coords: leg.coords.map((c) => [+c.lat.toFixed(5), +c.lng.toFixed(5)]),
+        maneuvers: (leg.maneuvers || []).map((m) => ({ along: Math.round(m.along), text: m.text, verbal: m.verbal, arrow: m.arrow })),
+        sections: (leg.sections || []).map((s) => ({ from: s.from, to: s.to, mag: s.mag, delay: s.delay }))
+      };
+      localStorage.setItem(NAV_CACHE + S.giro.id, JSON.stringify(payload));
+    } catch (e) { }
+  }
+
+  function loadNavCache(giroId) {
+    try {
+      const raw = localStorage.getItem(NAV_CACHE + giroId);
+      if (!raw) return null;
+      const p = JSON.parse(raw);
+      if (!p || !Array.isArray(p.coords) || p.coords.length < 2) return null;
+      const coords = p.coords.map((c) => ({ lat: c[0], lng: c[1] }));
+      const path = withCum(coords);
+      return {
+        cached: true,
+        destId: p.destId,
+        destName: p.destName,
+        coords: coords,
+        cum: path.cum,
+        total: path.total,
+        km: p.km,
+        sec: p.sec,
+        delay: p.delay || 0,
+        maneuvers: p.maneuvers || [],
+        sections: p.sections || [],
+        highway: false, toll: false
+      };
+    } catch (e) { return null; }
   }
 
   function fitAll() {
@@ -1245,10 +1291,25 @@
       Nav.route.sections = r.sections;
       Nav.spoken = {};
       drawNav(leg);
+      saveNavCache(Nav.route);
       navUpdate();
     } catch (e) {
       console.warn(e);
-      toast('Non riesco a calcolare il percorso ora', 'bad');
+      const cached = S.giro ? loadNavCache(S.giro.id) : null;
+      let used = false;
+      if (cached && cached.destId === dest.id && S.me) {
+        const pr = projectOnPath({ coords: cached.coords, cum: cached.cum, total: cached.total }, S.me);
+        if (pr.d < 500) {
+          cached.dest = dest;
+          Nav.route = cached;
+          Nav.spoken = {};
+          drawNav(cached);
+          navUpdate();
+          used = true;
+          toast('Senza rete: continuo con l’ultimo percorso salvato', 'bad');
+        }
+      }
+      if (!used) toast('Non riesco a calcolare il percorso ora', 'bad');
     } finally { Nav.busy = false; }
   }
 
