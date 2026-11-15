@@ -4,7 +4,7 @@
    - tile mappa: cache-first con limite (solo tile viste)
    - API routing/geocodifica: MAI in cache
 */
-const VERSION = 'pasomaps-v13';
+const VERSION = 'pasomaps-v15';
 const TILE_CACHE = 'pasomaps-tiles';
 const TILE_LIMIT = 3000;
 
@@ -59,11 +59,14 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
 
-  // API: sempre rete, mai cache
-  if (/valhalla|nominatim|photon|api\.tomtom\.com/.test(url.hostname)) return;
+  // API: sempre rete, mai cache (i tile della mappa TomTom invece si possono cacheare)
+  if (/valhalla|nominatim|photon/.test(url.hostname)) return;
+  if (url.hostname === 'api.tomtom.com' && url.pathname.indexOf('/map/') !== 0) return;
 
   // tile mappa
-  if (/basemaps\.cartocdn\.com|tile\.openstreetmap\.org/.test(url.hostname)) {
+  const isTile = /basemaps\.cartocdn\.com|tile\.openstreetmap\.org/.test(url.hostname) ||
+    (url.hostname === 'api.tomtom.com' && url.pathname.indexOf('/map/') === 0);
+  if (isTile) {
     e.respondWith((async () => {
       const c = await caches.open(TILE_CACHE);
       const hit = await c.match(req);

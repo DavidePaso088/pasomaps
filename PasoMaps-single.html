@@ -519,7 +519,7 @@ b,strong{font-weight:700}
   /* =============================== B. DATI =============================== */
   const DB_KEY = 'pasomaps.db.v1';
   const DEFAULT_TRUCK = { height: 2.8, width: 2.1, length: 6.0, weight: 3.5, axle_load: 1.8 };
-  const DEFAULT_SETTINGS = { voice: true, brightness: 1, autoAdvance: true, trafficKey: '', tomtomKey: '', mapStyle: 3, lastGiroId: null };
+  const DEFAULT_SETTINGS = { voice: true, brightness: 1, autoAdvance: true, trafficKey: '', tomtomKey: '', mapStyle: 3, mapProvider: 'osm', lastGiroId: null };
   const PALETTE = ['#3b82f6', '#22d3ee', '#a78bfa', '#f472b6', '#f59e0b', '#34d399', '#60a5fa', '#fb7185', '#c084fc', '#facc15', '#2dd4bf', '#f97316', '#818cf8', '#4ade80'];
   const ROUTE_CACHE = 'pasomaps.route.';
   const NAV_CACHE = 'pasomaps.nav.';
@@ -904,14 +904,43 @@ b,strong{font-weight:700}
   }
 
   /* =============================== E. MAPPA =============================== */
-  const TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const TILES_OSM = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const TILES_TT = 'https://api.tomtom.com/map/1/tile/basic/main/{z}/{x}/{y}.png?key=';
   let map = null;
+  let tileLayer = null;
   const LAY = { stops: null, route: null, nav: null, me: null, alt: null };
+
+  function mapProvider() {
+    return (db.settings.mapProvider === 'tomtom' && tomtomReady()) ? 'tomtom' : 'osm';
+  }
+
+  function applyMapLayer() {
+    if (!map) return;
+    if (tileLayer) { map.removeLayer(tileLayer); tileLayer = null; }
+    let ttErrors = 0;
+    if (mapProvider() === 'tomtom') {
+      tileLayer = L.tileLayer(TILES_TT + encodeURIComponent(tomtomKey()), {
+        maxZoom: 19, attribution: '&copy; TomTom'
+      });
+      tileLayer.on('tileerror', () => {
+        ttErrors++;
+        if (ttErrors >= 4 && mapProvider() === 'tomtom') {
+          db.settings.mapProvider = 'osm';
+          saveDB();
+          applyMapLayer();
+          toast('Le mappe TomTom non rispondono: torno a OpenStreetMap', 'bad');
+        }
+      });
+    } else {
+      tileLayer = L.tileLayer(TILES_OSM, { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' });
+    }
+    tileLayer.addTo(map);
+  }
 
   function ensureMap() {
     if (map) return map;
     map = L.map('map', { zoomControl: false, attributionControl: true, preferCanvas: true, center: [42.2, 12.4], zoom: 6 });
-    L.tileLayer(TILES, { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+    applyMapLayer();
     map.attributionControl.setPrefix('');
     LAY.stops = L.layerGroup().addTo(map);
     LAY.alt = L.layerGroup().addTo(map);
@@ -1976,6 +2005,9 @@ b,strong{font-weight:700}
       '<div class="switch"><div class="lbl">Autostrade<small>Bloccate: i percorsi non le usano mai. Statali e provinciali sì.</small></div><button class="tgl on locked" id="s-hw" style="opacity:.55"></button></div>' +
       '<div class="section-t">Mappa</div>' +
       '<div class="field"><label>Luminosità mappa</label><input id="s-bright" type="range" min="0.7" max="1.3" step="0.05" value="' + db.settings.brightness + '"><div class="hint">La mappa è chiara; il resto dell’app resta scuro.</div></div>' +
+      '<div class="field"><label>Base mappa</label><div class="chips" id="s-map-provider">' +
+      '<button data-p="osm">OpenStreetMap</button><button data-p="tomtom">TomTom</button></div>' +
+      '<div class="hint">TomTom richiede la chiave qui sopra e consuma tile del piano gratuito (200.000/mese). OpenStreetMap non richiede chiavi.</div></div>' +
       '<div class="section-t">Traffico (TomTom)</div>' +
       '<div class="field"><label>Chiave API TomTom</label>' +
       '<input id="s-tt" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="incolla qui la chiave" value="' + esc(db.settings.tomtomKey || '') + '">' +
@@ -2006,6 +2038,25 @@ b,strong{font-weight:700}
       db.settings.brightness = parseFloat(e.target.value) || 1.35;
       applyBrightness(); saveDB();
     });
+    const paintProvider = () => {
+      const cur = mapProvider();
+      $$('#s-map-provider button').forEach((b) => {
+        const on = b.getAttribute('data-p') === cur;
+        b.style.background = on ? '#2563eb' : '';
+        b.style.borderColor = on ? '#60a5fa' : '';
+        b.style.color = on ? '#fff' : '';
+      });
+    };
+    if ($('#s-map-provider')) {
+      paintProvider();
+      $$('#s-map-provider button').forEach((b) => b.addEventListener('click', () => {
+        const p = b.getAttribute('data-p');
+        if (p === 'tomtom' && !tomtomReady()) { toast('Prima inserisci la chiave TomTom', 'bad'); return; }
+        db.settings.mapProvider = p;
+        saveDB(); applyMapLayer(); paintProvider();
+        toast(p === 'tomtom' ? 'Mappa TomTom attiva' : 'Mappa OpenStreetMap attiva', 'good');
+      }));
+    }
     $('#s-export').addEventListener('click', exportData);
     $('#s-import').addEventListener('click', importData);
     const ttInput = $('#s-tt');
@@ -2013,6 +2064,7 @@ b,strong{font-weight:700}
       ttInput.addEventListener('change', () => {
         db.settings.tomtomKey = ttInput.value.trim();
         saveDB();
+        if (db.settings.mapProvider === 'tomtom') applyMapLayer();
         toast(db.settings.tomtomKey ? 'Chiave salvata sul telefono' : 'Chiave rimossa', 'good');
       });
     }
@@ -2026,6 +2078,7 @@ b,strong{font-weight:700}
       b.textContent = old; b.disabled = false;
       if (res.ok) {
         db.settings.tomtomKey = v; saveDB();
+        if (db.settings.mapProvider === 'tomtom') applyMapLayer();
         toast('Chiave valida · ' + res.km + ' km in ' + res.min + ' min' + (res.delay > 0 ? ' · +' + res.delay + ' min di traffico' : ''), 'good');
         vibrate(20);
       } else {
