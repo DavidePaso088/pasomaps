@@ -353,6 +353,11 @@ b,strong{font-weight:700}
 
 /* ---------- toast ---------- */
 #toasts{position:fixed;top:calc(14px + var(--safe-t));left:0;right:0;z-index:120;display:flex;flex-direction:column;align-items:center;gap:7px;pointer-events:none;padding:0 14px}
+#update-bar{
+  position:fixed;left:0;right:0;top:0;z-index:130;padding:calc(10px + var(--safe-t)) 14px 10px;
+  background:linear-gradient(90deg,#1d4ed8,#2563eb);color:#fff;font-size:12.5px;font-weight:600;
+  text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.4);cursor:pointer;
+}
 .toast{
   max-width:min(92%,420px);padding:11px 15px;border-radius:14px;font-size:12.5px;line-height:1.4;
   background:rgba(16,26,44,.97);border:1px solid rgba(96,165,250,.35);color:#e6f0ff;
@@ -402,7 +407,7 @@ b,strong{font-weight:700}
     <div id="giri-list" class="giri-list"></div>
     <button id="btn-new-giro" class="btn-wide">+ Nuovo giro</button>
     <button id="btn-cycle" class="btn-ghost" hidden>Crea ciclo di più giri</button>
-    <p class="fine">Percorsi calcolati <b>evitando sempre le autostrade</b>.<br>Dati salvati solo su questo telefono.</p>
+    <p class="fine">Percorsi calcolati <b>evitando sempre le autostrade</b>.<br>Dati salvati solo su questo telefono.<br><span id="build-tag" style="opacity:.7"></span></p>
   </div>
 </section>
 
@@ -474,6 +479,7 @@ b,strong{font-weight:700}
 </div></div>
 
 <div id="toasts"></div>
+<div id="update-bar" hidden>Nuova versione pronta — tocca per aggiornare</div>
 
 <script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
 <script>
@@ -3134,8 +3140,18 @@ b,strong{font-weight:700}
 
     // service worker (solo se servito da http/https)
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      const hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController) return;
+        const bar = $('#update-bar');
+        if (bar) bar.hidden = false;
+      });
       navigator.serviceWorker.register('sw.js').catch(() => { });
     }
+    const ub = $('#update-bar');
+    if (ub) ub.addEventListener('click', () => location.reload());
+    const bt = $('#build-tag');
+    if (bt) bt.textContent = APP_BUILD;
     // iOS: le voci arrivano in ritardo
     if ('speechSynthesis' in window) window.speechSynthesis.onvoiceschanged = () => { voiceIt = null; };
     window.PasoMaps = { db: () => db, S: S, Nav: Nav, getMap: () => map, computePreview: computePreview };

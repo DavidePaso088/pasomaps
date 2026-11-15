@@ -2655,8 +2655,18 @@
 
     // service worker (solo se servito da http/https)
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      const hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController) return;
+        const bar = $('#update-bar');
+        if (bar) bar.hidden = false;
+      });
       navigator.serviceWorker.register('sw.js').catch(() => { });
     }
+    const ub = $('#update-bar');
+    if (ub) ub.addEventListener('click', () => location.reload());
+    const bt = $('#build-tag');
+    if (bt) bt.textContent = APP_BUILD;
     // iOS: le voci arrivano in ritardo
     if ('speechSynthesis' in window) window.speechSynthesis.onvoiceschanged = () => { voiceIt = null; };
     window.PasoMaps = { db: () => db, S: S, Nav: Nav, getMap: () => map, computePreview: computePreview };

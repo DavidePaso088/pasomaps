@@ -340,6 +340,11 @@ b,strong{font-weight:700}
 
 /* ---------- toast ---------- */
 #toasts{position:fixed;top:calc(14px + var(--safe-t));left:0;right:0;z-index:120;display:flex;flex-direction:column;align-items:center;gap:7px;pointer-events:none;padding:0 14px}
+#update-bar{
+  position:fixed;left:0;right:0;top:0;z-index:130;padding:calc(10px + var(--safe-t)) 14px 10px;
+  background:linear-gradient(90deg,#1d4ed8,#2563eb);color:#fff;font-size:12.5px;font-weight:600;
+  text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.4);cursor:pointer;
+}
 .toast{
   max-width:min(92%,420px);padding:11px 15px;border-radius:14px;font-size:12.5px;line-height:1.4;
   background:rgba(16,26,44,.97);border:1px solid rgba(96,165,250,.35);color:#e6f0ff;
