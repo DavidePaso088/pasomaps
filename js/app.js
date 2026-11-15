@@ -1185,6 +1185,77 @@
 
   /* =============================== L. EDITOR TAPPA =============================== */
   let geocodeLast = 0;
+  const cityCenterCache = {};
+
+  async function cityCenter(name) {
+    const key = String(name || '').trim().toLowerCase();
+    if (!key) return null;
+    if (cityCenterCache[key]) return cityCenterCache[key];
+    try {
+      const rs = await geocode(key + ', Italia');
+      const r = rs && rs[0];
+      if (r) { cityCenterCache[key] = { lat: r.lat, lng: r.lng }; return cityCenterCache[key]; }
+    } catch (e) { }
+    return null;
+  }
+
+  async function geocodeNear(q, center, radiusKm) {
+    const rk = radiusKm || 35;
+    if (tomtomReady() && center) {
+      try {
+        const u = 'https://api.tomtom.com/search/2/search/' + encodeURIComponent(q) + '.json' +
+          '?key=' + encodeURIComponent(tomtomKey()) + '&lat=' + center.lat + '&lon=' + center.lng +
+          '&radius=' + Math.min(50000, Math.round(rk * 1000)) + '&limit=6&language=it-IT&countrySet=IT&typeahead=false';
+        const res = await fetch(u);
+        if (res.ok) {
+          const j = await res.json();
+          const out = (j.results || []).map((r) => {
+            const a = r.address || {};
+            const street = [a.streetName, a.streetNumber].filter(Boolean).join(' ');
+            const pos = r.position || {};
+            return { label: a.freeformAddress || street, short: street || a.freeformAddress || '', lat: pos.lat, lng: pos.lon, num: a.streetNumber || '' };
+          }).filter((r) => isFinite(r.lat) && isFinite(r.lng));
+          if (out.length) return out;
+        }
+      } catch (e) { }
+    }
+    if (center) {
+      try {
+        const dLat = rk / 111;
+        const dLng = rk / (111 * Math.cos(toRad(center.lat)) || 1);
+        const box = (center.lng - dLng) + ',' + (center.lat + dLat) + ',' + (center.lng + dLng) + ',' + (center.lat - dLat);
+        const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=6&accept-language=it&bounded=1&viewbox=' + box + '&q=' + encodeURIComponent(q);
+        const wait = Math.max(0, 1050 - (Date.now() - geocodeLast));
+        if (wait) await sleep(wait);
+        geocodeLast = Date.now();
+        const res = await fetch(url, { headers: { Accept: 'application/json' } });
+        if (res.ok) {
+          const j = await res.json();
+          const out = (j || []).map((x) => {
+            const a = x.address || {};
+            const street = [a.road || a.pedestrian || a.footway, a.house_number].filter(Boolean).join(' ');
+            return { label: x.display_name, short: street || x.name || x.display_name, lat: +x.lat, lng: +x.lon, num: a.house_number || '' };
+          });
+          if (out.length) return out;
+        }
+      } catch (e) { }
+      try {
+        const res = await fetch('https://photon.komoot.io/api?q=' + encodeURIComponent(q) + '&limit=6&lang=it&lat=' + center.lat + '&lon=' + center.lng);
+        if (res.ok) {
+          const j = await res.json();
+          const out = (j.features || []).map((f) => {
+            const p = f.properties || {};
+            const c = f.geometry && f.geometry.coordinates;
+            if (!c) return null;
+            const street = [p.street || p.name, p.housenumber].filter(Boolean).join(' ');
+            return { label: [street, p.city, p.postcode].filter(Boolean).join(', '), short: street || p.name || '', lat: c[1], lng: c[0], num: p.housenumber || '' };
+          }).filter(Boolean);
+          if (out.length) return out;
+        }
+      } catch (e) { }
+    }
+    return geocode(q);
+  }
 
   async function geocodeTomTom(q) {
     const url = 'https://api.tomtom.com/search/2/geocode/' + encodeURIComponent(q) + '.json' +
@@ -2022,15 +2093,20 @@
       '<p class="hint" style="margin-top:-6px">Incolla dal Notepad o scegli il file. <b>Una riga = una tappa</b>. Una riga con “Giro …”, “Giorno …”, “Lunedì …” apre un nuovo giro. Esempio:<br><code>Giro 1 - Verona</code><br><code>Via Roma 1 - Rossi</code><br><code>Via Mazzini 10 (piano 3, citofono)</code></p>' +
       '<div class="field"><label>Elenco</label><textarea id="i-text" style="min-height:150px" placeholder="Giro 1 - Verona&#10;Via Roma 1 - Rossi&#10;Via Mazzini 10 (piano 3)&#10;&#10;Giro 2 - Vicenza&#10;..."></textarea>' +
       '<div class="chips" style="margin-top:8px"><button id="i-file">Scegli file .txt/.csv</button><button id="i-clear">Svuota</button></div></div>' +
+      '<div class="field"><label>Zona (città)</label><input id="i-zone" placeholder="es. Viareggio"><div class="hint">La ricerca degli indirizzi resta entro ~35 km da questa città. Se i giri hanno la città nel titolo (“Giro 1 - Viareggio”), viene usata quella.</div></div>' +
       '<div class="switch" style="border-bottom:0;padding-top:0"><div class="lbl">Cerca le coordinate<small>' + (tomtomReady() ? 'Con la chiave TomTom i civici sono più precisi.' : 'Senza chiave TomTom uso OpenStreetMap: più lento e con meno civici.') + '</small></div><button class="tgl ' + (tomtomReady() ? 'on' : '') + '" id="i-geo"></button></div>' +
       '<div id="i-preview" class="hint"></div>' +
       '<div class="btn-row"><button class="btn" id="i-cancel">Annulla</button><button class="btn primary" id="i-run">Importa</button></div>');
     let geoOn = tomtomReady();
+    let zoneTouched = false;
     const ta = $('#i-text');
     const prev = $('#i-preview');
+    const zoneInp = $('#i-zone');
+    if (zoneInp) zoneInp.addEventListener('input', () => { zoneTouched = true; });
     const refresh = () => {
       const giri = parseList(ta.value);
       const tot = giri.reduce((a, g) => a + g.stops.length, 0);
+      if (zoneInp && !zoneTouched && !zoneInp.value && giri[0] && giri[0].city) zoneInp.value = giri[0].city;
       if (!tot) { prev.innerHTML = 'Nessuna tappa riconosciuta.'; return; }
       prev.innerHTML = '<b>' + giri.length + ' giri · ' + tot + ' tappe</b><br>' + giri.slice(0, 6).map((g) => '• ' + esc(g.name) + (g.city ? ' (' + esc(g.city) + ')' : '') + ' — ' + g.stops.length + ' tappe').join('<br>') + (giri.length > 6 ? '<br>…' : '');
     };
@@ -2055,16 +2131,17 @@
       const tot = giri.reduce((a, g) => a + g.stops.length, 0);
       if (!tot) { toast('Nessuna tappa riconosciuta: controlla il formato', 'bad'); return; }
       if (!confirm('Importare ' + giri.length + ' giri e ' + tot + ' tappe?\nSi aggiungono a quelli che hai già.')) return;
-      await runImport(giri, geoOn);
+      await runImport(giri, geoOn, zoneInp ? zoneInp.value.trim() : '');
     });
     refresh();
   }
 
-  async function runImport(giri, geoOn) {
+  async function runImport(giri, geoOn, zone) {
     openModal('<div class="modal-head"><b>Importazione</b></div>' +
       '<p class="hint" id="i-status">Preparo…</p>' +
       '<div style="height:8px;background:#1e293b;border-radius:6px;overflow:hidden"><div id="i-bar" style="height:100%;width:0;background:linear-gradient(90deg,#2563eb,#22d3ee);transition:width .2s"></div></div>' +
       '<p class="hint" id="i-sub">Non chiudere: la ricerca degli indirizzi può richiedere qualche minuto.</p>');
+    const zoneName = (zone || '').trim();
 
     const existing = new Set(db.giri.map((g) => g.name.toLowerCase()));
     const created = [];
@@ -2073,11 +2150,11 @@
       let k = 2;
       while (existing.has(name.toLowerCase())) { name = (g.name || 'Giro') + ' (' + k + ')'; k++; }
       existing.add(name.toLowerCase());
-      created.push({ ng: { id: uid(), name: name, city: g.city || '', color: PALETTE[db.giri.length % PALETTE.length], stops: [] }, g: g });
+      created.push({ ng: { id: uid(), name: name, city: g.city || zoneName || '', color: PALETTE[db.giri.length % PALETTE.length], stops: [] }, g: g });
     });
 
     const tasks = [];
-    created.forEach(({ ng, g }) => g.stops.forEach((s) => tasks.push({ ng: ng, s: s, city: g.city || '' })));
+    created.forEach(({ ng, g }) => g.stops.forEach((s) => tasks.push({ ng: ng, s: s, city: (g.city || zoneName || '').trim() })));
     const total = tasks.length;
     let done = 0;
     const bar = $('#i-bar'), status = $('#i-status');
@@ -2087,16 +2164,34 @@
       if (status) status.textContent = 'Cerco gli indirizzi… ' + done + ' / ' + total;
     };
 
+    const centers = {};
+    if (geoOn && total) {
+      const cities = Array.from(new Set(tasks.map((t) => t.city).filter(Boolean)));
+      for (const c of cities) {
+        if (status) status.textContent = 'Individuo la zona: ' + c + '…';
+        centers[c.toLowerCase()] = await cityCenter(c);
+      }
+    }
+
     if (geoOn && total) {
       let cursor = 0;
       const workers = tomtomReady() ? 4 : 1;
       const work = async () => {
         while (cursor < total) {
           const t = tasks[cursor++];
+          const center = t.city ? centers[t.city.toLowerCase()] : null;
           const q = t.s.query + ((t.city && t.s.query.toLowerCase().indexOf(t.city.toLowerCase()) === -1) ? ', ' + t.city : '');
           try {
-            const rs = await geocode(q);
-            t.res = rs && rs[0] ? rs[0] : null;
+            const rs = await geocodeNear(q, center, 35);
+            let best = null;
+            if (rs && rs.length) {
+              best = rs[0];
+              if (center) {
+                best = rs.slice().sort((a, b) => hav(center, a) - hav(center, b))[0];
+                if (hav(center, best) > 45000) t.outside = true;
+              }
+            }
+            t.res = best;
           } catch (e) { t.res = null; }
           tick();
         }
@@ -2104,10 +2199,11 @@
       await Promise.all(Array.from({ length: Math.min(workers, total) }, work));
     }
 
-    let withNum = 0, noNum = 0, failed = 0;
+    let withNum = 0, noNum = 0, failed = 0, outside = 0;
     tasks.forEach((t) => {
       const r = t.res || null;
       if (r) { if (r.num) withNum++; else noNum++; } else if (geoOn) failed++;
+      if (t.outside) outside++;
       t.ng.stops.push({
         id: uid(),
         name: (t.s.name && t.city && t.s.name.toLowerCase() === t.city.toLowerCase()) ? '' : (t.s.name || ''),
@@ -2123,8 +2219,8 @@
     const totStops = tasks.length;
     openModal('<div class="modal-head"><b>Importazione completata</b><button class="x" id="i-done">✕</button></div>' +
       '<p class="hint" style="margin-top:-6px"><b>' + created.length + ' giri</b> e <b>' + totStops + ' tappe</b> importati.</p>' +
-      (geoOn ? '<p class="hint">Civico esatto: <b>' + withNum + '</b><br>Senza civico: <b>' + noNum + '</b><br>Non trovate: <b>' + failed + '</b></p>' : '<p class="hint">Nessuna ricerca coordinate: apri le tappe e usa “Posiziona il pin”.</p>') +
-      '<p class="hint">Le tappe senza civico o non trovate restano da sistemare: apri la tappa e sposta il pin sul portone.</p>' +
+      (geoOn ? '<p class="hint">Civico esatto: <b>' + withNum + '</b><br>Senza civico: <b>' + noNum + '</b><br>Non trovate: <b>' + failed + '</b>' + (outside ? '<br>Fuori zona: <b>' + outside + '</b>' : '') + '</p>' : '<p class="hint">Nessuna ricerca coordinate: apri le tappe e usa “Posiziona il pin”.</p>') +
+      '<p class="hint">Le tappe senza civico, non trovate o fuori zona restano da sistemare: apri la tappa e sposta il pin sul portone.</p>' +
       '<button class="btn primary" id="i-done2" style="width:100%;margin-top:10px">Vai ai giri</button>');
     const done2 = () => { closeModal(); renderHome(); };
     if ($('#i-done')) $('#i-done').addEventListener('click', done2);
