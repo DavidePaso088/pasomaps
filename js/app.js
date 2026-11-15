@@ -53,7 +53,13 @@
   const DEFAULT_TRUCK = { height: 2.8, width: 2.1, length: 6.0, weight: 3.5, axle_load: 1.8 };
   const DEFAULT_SETTINGS = { voice: true, brightness: 1, autoAdvance: true, trafficKey: '', tomtomKey: '', mapStyle: 4, mapProvider: 'openfreemap', lastGiroId: null };
   const PALETTE = ['#3b82f6', '#22d3ee', '#a78bfa', '#f472b6', '#f59e0b', '#34d399', '#60a5fa', '#fb7185', '#c084fc', '#facc15', '#2dd4bf', '#f97316', '#818cf8', '#4ade80'];
-  const APP_BUILD = '1.34';
+  const APP_BUILD = (() => {
+    try {
+      const src = (document.currentScript && document.currentScript.src) || '';
+      const m = src.match(/[?&]v=(\d+)/);
+      return m ? 'build ' + m[1] : 'build locale';
+    } catch (e) { return 'build locale'; }
+  })();
   const ROUTE_CACHE = 'pasomaps.route.';
   const NAV_CACHE = 'pasomaps.nav.';
   let offlineWarned = 0;
@@ -1956,6 +1962,7 @@
       '<div class="btn-row"><button class="btn" id="s-export">Esporta backup</button><button class="btn" id="s-import">Importa</button></div>' +
       '<button class="btn" id="s-import-list" style="width:100%;margin-top:9px">Importa elenco (testo/CSV)</button>' +
       '<button class="btn" id="s-reset-day" style="width:100%;margin-top:9px">Azzera il giro di oggi</button>' +
+      '<button class="btn" id="s-update" style="width:100%;margin-top:9px">Forza aggiornamento app</button>' +
       '<button class="btn danger" id="s-wipe" style="width:100%;margin-top:9px">Cancella tutti i dati</button>' +
       '<p class="hint">I dati stanno solo in questo telefono: se cancelli la cache del browser o cambi telefono, senza backup li perdi.</p>' +
       '<div class="section-t">Info</div>' +
@@ -1999,6 +2006,13 @@
     }
     $('#s-export').addEventListener('click', exportData);
     $('#s-import').addEventListener('click', importData);
+    $('#s-update').addEventListener('click', async () => {
+      if (!confirm('Forzare l’aggiornamento?\nViene svuotata la cache della mappa offline; giri, tappe e chiave restano.')) return;
+      flushDB();
+      try { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map((r) => r.unregister())); } catch (e) { }
+      try { const keys = await caches.keys(); await Promise.all(keys.map((k) => caches.delete(k))); } catch (e) { }
+      location.replace(location.pathname + '?u=' + Date.now());
+    });
     if ($('#s-import-list')) $('#s-import-list').addEventListener('click', () => { closeModal(); openImportModal(); });
     const ttInput = $('#s-tt');
     if (ttInput) {
