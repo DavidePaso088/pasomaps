@@ -16,7 +16,8 @@ profilo *truck*), la posizione è quella del telefono, la navigazione parla.
 | Scelta manuale del giro del giorno | ✅ |
 | Tappe con indirizzo cercato o posizione GPS | ✅ |
 | Note per tappa: piano, citofono, portineria, garage… | ✅ |
-| Mappa 78% dello schermo, **mappa chiara** su app scura, percorso blu | ✅ |
+| Mappa 78% dello schermo, **mappa chiara vettoriale** su app scura, percorso blu | ✅ |
+| Navigazione 3D (inclinata, direzione in alto) | ✅ con OpenFreeMap |
 | Sotto la mappa: minuti e km alla prossima tappa + ora di arrivo | ✅ |
 | Tasto “Tappe” in basso: elenco scorrevole, si posiziona da solo sulla tappa attuale | ✅ |
 | Saltare una tappa (“⤼”) senza perderla per le prossime settimane | ✅ |
@@ -148,12 +149,14 @@ diverso, cambiali subito.**
 - **Server di routing**: è l’istanza pubblica `valhalla1.openstreetmap.de`, adatta a un
   uso personale leggero. Se un giorno risponde lento o blocca, va sostituita con un
   servizio con chiave (GraphHopper, OpenRouteService, Stadia, self-hosted).
-- **Senza rete**: la mappa delle zone che hai già guardato resta disponibile (cache dei
+- **Senza rete**: la mappa vettoriale delle zone già viste resta disponibile (cache dei
   tile) e l'ultimo percorso calcolato viene salvato, con navigazione, manovre e voce.
-  Non si può però **ricalcolare** né aggiornare il traffico senza connessione, e non
-  esiste un pulsante “scarica la mappa”: la policy di OpenStreetMap vieta il download
-  preventivo dei tile. Chi vuole mappe offline complete deve passare a un fornitore
-  che le concede (TomTom, Mapbox) o a tile propri.
+  Non si può però **ricalcolare** né aggiornare il traffico senza connessione. Con i
+  tile vettoriali un "scarica zona" sarebbe possibile entro i limiti di OpenFreeMap
+  (3.000 tile / 50 MB per scaricamento): non è ancora implementato.
+- **3D**: l'inclinazione funziona con OpenFreeMap (vettoriale). Con le basi raster
+  (OpenStreetMap, TomTom) la mappa resta in 2D, perché inclinare immagini raster
+  renderebbe le scritte illeggibili.
 - **Dati sul telefono**: `localStorage`. Se cancelli i dati del browser o cambi telefono
   senza backup, i giri spariscono. `Impostazioni → Esporta backup` produce un JSON;
   `Importa` lo rimette dentro.
@@ -179,7 +182,8 @@ PasoMaps/
 
 Servizi esterni usati, tutti senza chiave:
 
-- **Tile mappa**: OpenStreetMap standard, stile chiaro (niente chiavi, niente CARTO).
+- **Tile mappa**: OpenFreeMap (vettoriale, gratis, senza chiave) — oppure OpenStreetMap o TomTom raster.
+- **Motore mappa**: MapLibre GL JS (3D, rotazione, etichette sempre dritte).
 - **Routing**: Valhalla, profilo truck.
 - **Geocodifica**: Nominatim con fallback Photon.
 - **Leaflet** da unpkg.

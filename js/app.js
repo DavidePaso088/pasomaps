@@ -51,7 +51,7 @@
   /* =============================== B. DATI =============================== */
   const DB_KEY = 'pasomaps.db.v1';
   const DEFAULT_TRUCK = { height: 2.8, width: 2.1, length: 6.0, weight: 3.5, axle_load: 1.8 };
-  const DEFAULT_SETTINGS = { voice: true, brightness: 1, autoAdvance: true, trafficKey: '', tomtomKey: '', mapStyle: 3, mapProvider: 'osm', lastGiroId: null };
+  const DEFAULT_SETTINGS = { voice: true, brightness: 1, autoAdvance: true, trafficKey: '', tomtomKey: '', mapStyle: 4, mapProvider: 'openfreemap', lastGiroId: null };
   const PALETTE = ['#3b82f6', '#22d3ee', '#a78bfa', '#f472b6', '#f59e0b', '#34d399', '#60a5fa', '#fb7185', '#c084fc', '#facc15', '#2dd4bf', '#f97316', '#818cf8', '#4ade80'];
   const ROUTE_CACHE = 'pasomaps.route.';
   const NAV_CACHE = 'pasomaps.nav.';
@@ -67,12 +67,12 @@
     const f = freshDB();
     if (!d || typeof d !== 'object') return f;
     d.truck = Object.assign({}, f.truck, d.truck || {});
-    const hadStyle = !!(d.settings && d.settings.mapStyle === 3);
+    const hadStyle = !!(d.settings && d.settings.mapStyle === 4);
     d.settings = Object.assign({}, f.settings, d.settings || {});
     if (!hadStyle) {
-      // mappa chiara (richiesta): niente filtro scuro, luminosità neutra
-      d.settings.mapStyle = 3;
-      d.settings.brightness = 1;
+      // passaggio a MapLibre + OpenFreeMap (mappa vettoriale, 3D)
+      d.settings.mapStyle = 4;
+      d.settings.mapProvider = 'openfreemap';
     }
     d.giri = Array.isArray(d.giri) ? d.giri : [];
     d.giri.forEach((g) => {
@@ -435,57 +435,148 @@
     return { legs: legs, km: km, sec: sec, highway: false, motorwayWarning: motorwayWarning };
   }
 
-  /* =============================== E. MAPPA =============================== */
+  /* =============================== E. MAPPA (MapLibre GL) =============================== */
   const TILES_OSM = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
   const TILES_TT = 'https://api.tomtom.com/map/1/tile/basic/main/{z}/{x}/{y}.png?key=';
+  const STYLE_OFM = 'https://tiles.openfreemap.org/styles/bright';
+  const OFM_ATTRIB = '&copy; OpenFreeMap &copy; OpenMapTiles &copy; OpenStreetMap';
+
   let map = null;
-  let tileLayer = null;
-  const LAY = { stops: null, route: null, nav: null, me: null, alt: null };
+  let stopMarkers = [];
+  let meMarker = null;
+  let ttTileErrors = 0;
 
   function mapProvider() {
-    return (db.settings.mapProvider === 'tomtom' && tomtomReady()) ? 'tomtom' : 'osm';
+    if (db.settings.mapProvider === 'openfreemap') return 'openfreemap';
+    if (db.settings.mapProvider === 'tomtom' && tomtomReady()) return 'tomtom';
+    return 'osm';
+  }
+
+  function rasterStyle(url, attribution) {
+    return {
+      version: 8,
+      sources: { base: { type: 'raster', tiles: [url], tileSize: 256, maxzoom: 19, attribution: attribution } },
+      layers: [{ id: 'base', type: 'raster', source: 'base' }]
+    };
+  }
+
+  function styleForProvider() {
+    const p = mapProvider();
+    if (p === 'tomtom') return rasterStyle(TILES_TT + encodeURIComponent(tomtomKey()), '&copy; TomTom');
+    if (p === 'osm') return rasterStyle(TILES_OSM, '&copy; OpenStreetMap contributors');
+    return STYLE_OFM;
+  }
+
+  const canPitch = () => mapProvider() === 'openfreemap';
+  const emptyFC = () => ({ type: 'FeatureCollection', features: [] });
+
+  function firstSymbolLayer() {
+    try {
+      const l = (map.getStyle().layers || []).find((x) => x.type === 'symbol');
+      return l ? l.id : undefined;
+    } catch (e) { return undefined; }
+  }
+
+  function ensureRouteLayers() {
+    if (!map) return false;
+    const before = firstSymbolLayer();
+    try {
+      if (!map.getSource('route')) {
+        map.addSource('route', { type: 'geojson', data: emptyFC() });
+        map.addLayer({ id: 'route-halo', type: 'line', source: 'route', filter: ['==', ['get', 'kind'], 'base'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#0b2a63', 'line-width': 9, 'line-opacity': 0.45 } }, before);
+        map.addLayer({ id: 'route-main', type: 'line', source: 'route', filter: ['==', ['get', 'kind'], 'base'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#3b82f6', 'line-width': 5, 'line-opacity': 0.98 } }, before);
+        map.addLayer({ id: 'route-traffic', type: 'line', source: 'route', filter: ['==', ['get', 'kind'], 'traffic'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-width': 5 } }, before);
+      }
+      if (!map.getSource('nav')) {
+        map.addSource('nav', { type: 'geojson', data: emptyFC() });
+        map.addLayer({ id: 'nav-halo', type: 'line', source: 'nav', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#ffffff', 'line-width': 9, 'line-opacity': 0.2 } }, before);
+        map.addLayer({ id: 'nav-main', type: 'line', source: 'nav', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#38bdf8', 'line-width': 6 } }, before);
+        map.addLayer({ id: 'nav-traffic', type: 'line', source: 'nav', filter: ['==', ['get', 'kind'], 'traffic'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-width': 6 } }, before);
+      }
+      return true;
+    } catch (e) { return false; }
   }
 
   function applyMapLayer() {
     if (!map) return;
-    if (tileLayer) { map.removeLayer(tileLayer); tileLayer = null; }
-    let ttErrors = 0;
-    if (mapProvider() === 'tomtom') {
-      tileLayer = L.tileLayer(TILES_TT + encodeURIComponent(tomtomKey()), {
-        maxZoom: 19, attribution: '&copy; TomTom'
-      });
-      tileLayer.on('tileerror', () => {
-        ttErrors++;
-        if (ttErrors >= 4 && mapProvider() === 'tomtom') {
-          db.settings.mapProvider = 'osm';
-          saveDB();
-          applyMapLayer();
-          toast('Le mappe TomTom non rispondono: torno a OpenStreetMap', 'bad');
-        }
-      });
-    } else {
-      tileLayer = L.tileLayer(TILES_OSM, { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' });
-    }
-    tileLayer.addTo(map);
+    ttTileErrors = 0;
+    try { map.setStyle(styleForProvider()); }
+    catch (e) { console.warn('style', e); }
+  }
+
+  function clearRouteSource() {
+    if (map && map.getSource('route')) map.getSource('route').setData(emptyFC());
+  }
+  function clearNavSource() {
+    if (map && map.getSource('nav')) map.getSource('nav').setData(emptyFC());
+  }
+
+  function pointAtAlong(path, along) {
+    along = clamp(along, 0, path.total);
+    let i = 1;
+    while (i < path.cum.length - 1 && path.cum[i] < along) i++;
+    const a = path.coords[i - 1], b = path.coords[i];
+    const seg = (path.cum[i] - path.cum[i - 1]) || 1;
+    const t = clamp((along - path.cum[i - 1]) / seg, 0, 1);
+    return { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+  }
+
+  function bearingBetween(a, b) {
+    const y = Math.sin(toRad(b.lng - a.lng)) * Math.cos(toRad(b.lat));
+    const x = Math.cos(toRad(a.lat)) * Math.sin(toRad(b.lat)) - Math.sin(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.cos(toRad(b.lng - a.lng));
+    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+  }
+
+  function bearingAt(path, p) {
+    const pr = projectOnPath(path, p);
+    const a = pointAtAlong(path, Math.max(0, pr.along - 8));
+    const b = pointAtAlong(path, Math.min(path.total, pr.along + 30));
+    return bearingBetween(a, b);
   }
 
   function ensureMap() {
     if (map) return map;
-    map = L.map('map', { zoomControl: false, attributionControl: true, preferCanvas: true, center: [42.2, 12.4], zoom: 6 });
-    applyMapLayer();
-    map.attributionControl.setPrefix('');
-    LAY.stops = L.layerGroup().addTo(map);
-    LAY.alt = L.layerGroup().addTo(map);
-    LAY.route = L.layerGroup().addTo(map);
-    LAY.nav = L.layerGroup().addTo(map);
-    LAY.me = L.layerGroup().addTo(map);
+    map = new maplibregl.Map({
+      container: 'map',
+      style: styleForProvider(),
+      center: [12.4, 42.2],
+      zoom: 6,
+      attributionControl: false,
+      renderWorldCopies: false
+    });
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+    const collapseAttrib = () => {
+      try { const el = map.getContainer().querySelector('.maplibregl-ctrl-attrib'); if (el) el.classList.remove('maplibregl-compact-show'); } catch (e) { }
+    };
+    map.on('load', collapseAttrib);
+    setTimeout(collapseAttrib, 1200);
+    map.on('load', () => { ensureRouteLayers(); redrawMap(); });
+    map.on('style.load', () => { ensureRouteLayers(); redrawMap(); });
+    map.once('idle', () => { ensureRouteLayers(); redrawMap(); });
     map.on('dragstart', () => { S.follow = false; });
+    map.on('error', (e) => {
+      if (mapProvider() !== 'tomtom') return;
+      if (e && e.sourceId === 'base') {
+        ttTileErrors++;
+        if (ttTileErrors >= 4) {
+          db.settings.mapProvider = 'openfreemap';
+          saveDB();
+          applyMapLayer();
+          toast('Le mappe TomTom non rispondono: torno a OpenFreeMap', 'bad');
+        }
+      }
+    });
     return map;
   }
 
-  function pinIcon(num, state) {
+  function pinEl(num, state) {
+    const d = document.createElement('div');
     const cls = 'pin' + (state === 'cur' ? ' cur' : state === 'done' ? ' done' : state === 'skip' ? ' skip' : state === 'plain' ? ' plain' : '');
-    return L.divIcon({ className: '', html: '<div class="' + cls + '"><span>' + (state === 'done' ? '✓' : state === 'skip' ? '–' : num) + '</span></div>', iconSize: [30, 30], iconAnchor: [15, 30] });
+    d.className = cls;
+    const s = document.createElement('span');
+    s.textContent = state === 'done' ? '✓' : state === 'skip' ? '–' : String(num);
+    d.appendChild(s);
+    return d;
   }
 
   /* =============================== F. STATO SCHERMATA =============================== */
@@ -601,7 +692,8 @@
     showScreen('giro');
     pushState('giro');
     ensureMap();
-    setTimeout(() => { try { map.invalidateSize(); } catch (e) { } }, 90);
+    try { map.easeTo({ pitch: 0, bearing: 0, duration: 0 }); } catch (e) { }
+    setTimeout(() => { try { if (map) map.resize(); } catch (e) { } }, 90);
     renderGiroChrome();
     renderStops();
     drawMarkers();
@@ -656,7 +748,7 @@
     const stops = activeStops();
     if (!stops.length) {
       S.preview = null; S.shownRoute = null;
-      clearLayer(LAY.route); clearLayer(LAY.alt);
+      clearRouteSource();
       setRouteState('Nessuna tappa da fare: aggiungi o ripristina una tappa', 'good');
       updateEta();
       return;
@@ -668,7 +760,7 @@
     const start = routeStartPoints();
     if (start.points.length < 2) {
       S.preview = null; S.shownRoute = null;
-      clearLayer(LAY.route); clearLayer(LAY.alt);
+      clearRouteSource();
       setRouteState('Una sola tappa: aggiungine un’altra, oppure tocca ➤ per navigare verso questa', '');
       updateEta();
       return;
@@ -682,7 +774,6 @@
       S.shownRoute = r;
       S.previewFromMe = start.fromMe;
       S.altOn = false; S.previewAlt = null;
-      clearLayer(LAY.alt);
       drawPreview(r);
       saveRouteCache(S.giro, r);
       const hw = r.motorwayWarning;
@@ -726,34 +817,43 @@
     return null;                             // nessun ritardo: percorso resta blu
   }
 
-  function drawSections(layer, coords, sections) {
-    if (!coords || !sections) return;
-    sections.forEach((s) => {
+  function routeFeatures(r, prefix) {
+    const feats = [];
+    let pts = [];
+    if (r.coords && r.coords.length > 1) {
+      pts = r.coords.map((c) => [+c.lng.toFixed(6), +c.lat.toFixed(6)]);
+    } else if (r.legs) {
+      r.legs.forEach((l) => l.coords.forEach((c, i) => { if (i === 0 && pts.length) return; pts.push([+c.lng.toFixed(6), +c.lat.toFixed(6)]); }));
+    }
+    if (pts.length < 2) return feats;
+    feats.push({ type: 'Feature', properties: { kind: 'base' }, geometry: { type: 'LineString', coordinates: pts } });
+    (r.sections || []).forEach((s) => {
       const col = trafficColor(s.delay || 0);
       if (!col) return;
-      const seg = coords.slice(Math.max(0, s.from), Math.min(coords.length, s.to + 1)).map((c) => [c.lat, c.lng]);
+      const seg = (r.coords || []).slice(Math.max(0, s.from), Math.min((r.coords || []).length, s.to + 1))
+        .map((c) => [+c.lng.toFixed(6), +c.lat.toFixed(6)]);
       if (seg.length < 2) return;
-      L.polyline(seg, { color: col, weight: 5, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }).addTo(layer);
+      feats.push({ type: 'Feature', properties: { kind: 'traffic', color: col }, geometry: { type: 'LineString', coordinates: seg } });
     });
+    return feats;
   }
 
   function drawPreview(r) {
-    clearLayer(LAY.route);
-    let pts = [];
-    if (r.coords && r.coords.length > 1) {
-      pts = r.coords.map((c) => [c.lat, c.lng]);
-    } else {
-      r.legs.forEach((l) => l.coords.forEach((c, i) => { if (i === 0 && pts.length) return; pts.push([c.lat, c.lng]); }));
-    }
-    if (pts.length < 2) return;
-    L.polyline(pts, { color: '#0b2a63', weight: 12, opacity: 0.55, lineCap: 'round', lineJoin: 'round' }).addTo(LAY.route);
-    L.polyline(pts, { color: '#3b82f6', weight: 6, opacity: 0.98, lineCap: 'round', lineJoin: 'round' }).addTo(LAY.route);
-    drawSections(LAY.route, r.coords, r.sections);
+    if (!map) return;
+    if (!map.getSource('route') && !ensureRouteLayers()) return;
+    try { map.getSource('route').setData({ type: 'FeatureCollection', features: routeFeatures(r) }); } catch (e) { }
+  }
+
+  function drawNav(leg) {
+    if (!map) return;
+    if (!map.getSource('nav') && !ensureRouteLayers()) return;
+    try { map.getSource('nav').setData({ type: 'FeatureCollection', features: routeFeatures(leg) }); } catch (e) { }
   }
 
   function drawMarkers() {
-    if (!S.giro) return;
-    clearLayer(LAY.stops);
+    if (!map || !S.giro) return;
+    stopMarkers.forEach((m) => { try { m.remove(); } catch (e) { } });
+    stopMarkers = [];
     const act = activeStops();
     S.giro.stops.forEach((st) => {
       if (!isFinite(st.lat)) return;
@@ -761,22 +861,33 @@
       if (S.session && S.session.done[st.id]) state = 'done';
       else if (S.session && S.session.skipped.indexOf(st.id) !== -1) state = 'skip';
       else if (act.length && act[0].id === st.id) state = 'cur';
-      const m = L.marker([st.lat, st.lng], { icon: pinIcon(stopIndexLabel(st.id), state), keyboard: false, zIndexOffset: state === 'cur' ? 500 : 0 })
-        .addTo(LAY.stops);
-      m.on('click', () => openStopEditor(st.id, {}));
+      const el = pinEl(stopIndexLabel(st.id), state);
+      el.addEventListener('click', (ev) => { ev.stopPropagation(); openStopEditor(st.id, {}); });
+      const m = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+        .setLngLat([st.lng, st.lat]).addTo(map);
+      stopMarkers.push(m);
     });
   }
 
   function updateMeMarker() {
-    clearLayer(LAY.me);
-    if (!S.me) return;
-    L.marker([S.me.lat, S.me.lng], {
-      icon: L.divIcon({ className: '', html: '<div class="me"></div>', iconSize: [20, 20], iconAnchor: [10, 10] }),
-      interactive: false, zIndexOffset: 1000
-    }).addTo(LAY.me);
+    if (meMarker) { try { meMarker.remove(); } catch (e) { } meMarker = null; }
+    if (!map || !S.me) return;
+    const pos = (Nav.active && S.meSnap) ? S.meSnap : S.me;
+    const el = document.createElement('div');
+    el.className = 'me';
+    meMarker = new maplibregl.Marker({ element: el, anchor: 'center' })
+      .setLngLat([pos.lng, pos.lat]).addTo(map);
   }
 
-  function clearLayer(l) { if (l) l.clearLayers(); }
+  function redrawMap() {
+    if (!map) return;
+    if (S.shownRoute) drawPreview(S.shownRoute);
+    if (Nav.route) drawNav(Nav.route);
+    drawMarkers();
+    updateMeMarker();
+  }
+
+  function clearLayer() { /* compatibilità: le sorgenti MapLibre si svuotano con setData */ }
 
   /* ---------- cache del percorso: l'app resta utile senza rete ---------- */
   function saveRouteCache(g, r) {
@@ -891,8 +1002,10 @@
     if (!pts.length && S.giro) S.giro.stops.forEach((s) => { if (isFinite(s.lat)) pts.push([s.lat, s.lng]); });
     if (S.me) pts.push([S.me.lat, S.me.lng]);
     if (!pts.length) return;
-    if (pts.length === 1) { map.setView(pts[0], 16); return; }
-    map.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [42, 86], paddingBottomRight: [42, 70], maxZoom: 16 });
+    if (pts.length === 1) { map.easeTo({ center: [pts[0][1], pts[0][0]], zoom: 16, duration: 0 }); return; }
+    const lngs = pts.map((p) => p[1]), lats = pts.map((p) => p[0]);
+    map.fitBounds([[Math.min.apply(null, lngs), Math.min.apply(null, lats)], [Math.max.apply(null, lngs), Math.max.apply(null, lats)]],
+      { padding: { top: 90, bottom: 70, left: 42, right: 42 }, maxZoom: 16, duration: 0 });
   }
 
   /* ---------- scelta manuale del pin (civico non presente nella mappa) ---------- */
@@ -909,15 +1022,22 @@
       '<button id="pin-cancel" style="flex:1;padding:14px;border-radius:14px;border:1px solid #2b3a55;background:#131c2e;color:#eaf1ff;font:600 14px system-ui">Annulla</button>' +
       '<button id="pin-ok" style="flex:1;padding:14px;border-radius:14px;border:0;background:linear-gradient(145deg,#1d4ed8,#2563eb);color:#fff;font:700 14px system-ui">Usa questa posizione</button></div>';
     document.body.appendChild(wrap);
-    const pm = L.map('pinmap', { zoomControl: true }).setView([start.lat, start.lng], 17);
-    const url = mapProvider() === 'tomtom' ? TILES_TT + encodeURIComponent(tomtomKey()) : TILES_OSM;
-    L.tileLayer(url, { maxZoom: 19, attribution: mapProvider() === 'tomtom' ? '&copy; TomTom' : '&copy; OpenStreetMap' }).addTo(pm);
-    const marker = L.marker([start.lat, start.lng], { draggable: true }).addTo(pm);
-    setTimeout(() => { try { pm.invalidateSize(); } catch (e) { } }, 80);
+    const pm = new maplibregl.Map({
+      container: 'pinmap',
+      style: styleForProvider(),
+      center: [start.lng, start.lat],
+      zoom: 17,
+      attributionControl: false
+    });
+    pm.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+    setTimeout(() => { try { const el = pm.getContainer().querySelector('.maplibregl-ctrl-attrib'); if (el) el.classList.remove('maplibregl-compact-show'); } catch (e) { } }, 800);
+    const marker = new maplibregl.Marker({ draggable: true, color: '#2563eb' })
+      .setLngLat([start.lng, start.lat]).addTo(pm);
+    setTimeout(() => { try { pm.resize(); } catch (e) { } }, 120);
     const close = () => { try { pm.remove(); } catch (e) { } wrap.remove(); };
     document.getElementById('pin-cancel').onclick = close;
     document.getElementById('pin-ok').onclick = () => {
-      const p = marker.getLatLng();
+      const p = marker.getLngLat();
       close();
       onPick(p.lat, p.lng);
     };
@@ -1343,6 +1463,7 @@
     if (!act.length) { toast('Nessuna tappa da raggiungere', 'bad'); return; }
     Nav.active = true; Nav.spoken = {}; Nav.offCount = 0; S.follow = true;
     keepAwake(true);
+    $('#route-state').classList.add('hide');
     setNavButton(true);
     $('#nav-banner').classList.add('on');
     $('#nb-title').textContent = 'Cerco il segnale GPS…';
@@ -1362,7 +1483,9 @@
     Nav.route = null; Nav.busy = false;
     setNavButton(false);
     $('#nav-banner').classList.remove('on');
-    clearLayer(LAY.nav);
+    clearNavSource();
+    $('#route-state').classList.remove('hide');
+    if (map && map.getPitch && map.getPitch() > 0) { try { map.easeTo({ pitch: 0, bearing: 0, duration: 600 }); } catch (e) { } }
     if (!silent) { try { window.speechSynthesis.cancel(); } catch (e) { } }
     updateEta();
   }
@@ -1384,20 +1507,43 @@
     return { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
   }
 
+  function applyNavCamera() {
+    if (!map || !S.me || !Nav.route || !Nav.route.coords || Nav.route.coords.length < 2) return;
+    const path = { coords: Nav.route.coords, cum: Nav.route.cum, total: Nav.route.total };
+    const pr = projectOnPath(path, S.me);
+    const snap = pointAtAlong(path, pr.along);
+    const ahead = pointAtAlong(path, pr.along + (canPitch() ? 60 : 90));
+    const opt = {
+      center: [ahead.lng, ahead.lat],
+      zoom: Math.max(map.getZoom(), canPitch() ? 17 : 16),
+      duration: 700,
+      padding: canPitch() ? { top: 0, bottom: 150, left: 0, right: 0 } : { top: 0, bottom: 0, left: 0, right: 0 }
+    };
+    if (canPitch()) {
+      opt.pitch = 55;
+      opt.bearing = hav(snap, ahead) > 2 ? bearingBetween(snap, ahead) : 0;
+    }
+    try { map.easeTo(opt); } catch (e) { }
+  }
+
   function onFix(pos) {
     S.me = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, ts: Date.now(), head: pos.coords.heading };
+    S.meSnap = null;
+    if (Nav.active && Nav.route && Nav.route.coords && Nav.route.coords.length > 2) {
+      const path = { coords: Nav.route.coords, cum: Nav.route.cum, total: Nav.route.total };
+      const pr = projectOnPath(path, S.me);
+      if (pr.d < 100) S.meSnap = pointAtAlong(path, pr.along);
+    }
     updateMeMarker();
-    if (S.follow !== false) {
-      if (!map) return;
-      const z = Math.max(map.getZoom(), 16);
+    if (S.follow !== false && map) {
       if (Nav.active && Nav.route && Nav.route.coords && Nav.route.coords.length > 2) {
-        // in navigazione guardo avanti: il puntino resta nel basso dello schermo
-        const ahead = pointAhead({ coords: Nav.route.coords, cum: Nav.route.cum, total: Nav.route.total }, S.me, 90);
-        map.setView([ahead.lat, ahead.lng], z, { animate: true, duration: 0.5 });
+        applyNavCamera();
       } else {
-        const d = map.getCenter().distanceTo(L.latLng(S.me.lat, S.me.lng));
-        if (d > 25) map.setView([S.me.lat, S.me.lng], z, { animate: true, duration: 0.6 });
-        else if (map.getZoom() < z) map.setZoom(z);
+        const z = Math.max(map.getZoom(), 16);
+        const c = map.getCenter();
+        const d = hav(S.me, { lat: c.lat, lng: c.lng });
+        if (d > 25) map.easeTo({ center: [S.me.lng, S.me.lat], zoom: z, pitch: 0, bearing: 0, duration: 500 });
+        else if (map.getZoom() < z) map.easeTo({ zoom: z, duration: 300 });
       }
     }
     if (!Nav.active) { updateEta(); return; }
@@ -1422,6 +1568,7 @@
       drawNav(leg);
       saveNavCache(Nav.route);
       navUpdate();
+      if (S.follow !== false) applyNavCamera();
     } catch (e) {
       console.warn(e);
       const cached = S.giro ? loadNavCache(S.giro.id) : null;
@@ -1434,21 +1581,13 @@
           Nav.spoken = {};
           drawNav(cached);
           navUpdate();
+          if (S.follow !== false) applyNavCamera();
           used = true;
           toast('Senza rete: continuo con l’ultimo percorso salvato', 'bad');
         }
       }
       if (!used) toast('Non riesco a calcolare il percorso ora', 'bad');
     } finally { Nav.busy = false; }
-  }
-
-  function drawNav(leg) {
-    clearLayer(LAY.nav);
-    const pts = leg.coords.map((c) => [c.lat, c.lng]);
-    if (pts.length < 2) return;
-    L.polyline(pts, { color: '#ffffff', weight: 10, opacity: 0.16, lineCap: 'round' }).addTo(LAY.nav);
-    L.polyline(pts, { color: '#38bdf8', weight: 7, opacity: 1, lineCap: 'round', lineJoin: 'round' }).addTo(LAY.nav);
-    drawSections(LAY.nav, leg.coords, leg.sections);
   }
 
   function navUpdate() {
@@ -1638,8 +1777,8 @@
       '<div class="section-t">Mappa</div>' +
       '<div class="field"><label>Luminosità mappa</label><input id="s-bright" type="range" min="0.7" max="1.3" step="0.05" value="' + db.settings.brightness + '"><div class="hint">La mappa è chiara; il resto dell’app resta scuro.</div></div>' +
       '<div class="field"><label>Base mappa</label><div class="chips" id="s-map-provider">' +
-      '<button data-p="osm">OpenStreetMap</button><button data-p="tomtom">TomTom</button></div>' +
-      '<div class="hint">TomTom richiede la chiave qui sopra e consuma tile del piano gratuito (200.000/mese). OpenStreetMap non richiede chiavi.</div></div>' +
+      '<button data-p="openfreemap">OpenFreeMap</button><button data-p="osm">OpenStreetMap</button><button data-p="tomtom">TomTom</button></div>' +
+      '<div class="hint">OpenFreeMap è vettoriale, gratuita e senza chiave: è quella che abilita il 3D. OpenStreetMap e TomTom sono raster (nessun 3D); TomTom usa la chiave qui sopra.</div></div>' +
       '<div class="section-t">Traffico (TomTom)</div>' +
       '<div class="field"><label>Chiave API TomTom</label>' +
       '<input id="s-tt" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="incolla qui la chiave" value="' + esc(db.settings.tomtomKey || '') + '">' +
@@ -1881,7 +2020,7 @@
     });
     $('#btn-optimize').addEventListener('click', optimizeOrder);
     $('#btn-recenter').addEventListener('click', () => {
-      if (S.me) { map.setView([S.me.lat, S.me.lng], Math.max(map.getZoom(), 16)); S.follow = true; }
+      if (S.me) { map.easeTo({ center: [S.me.lng, S.me.lat], zoom: Math.max(map.getZoom(), 16), pitch: 0, bearing: 0, duration: 500 }); S.follow = true; }
       else { fitAll(); }
     });
     $('#btn-alt').addEventListener('click', toggleAlt);
@@ -1917,7 +2056,7 @@
       }
       if (center) {
         const st = S.giro.stops.find((s) => s.id === center.getAttribute('data-center'));
-        if (st && isFinite(st.lat)) { closeSheet(); map.setView([st.lat, st.lng], 16); }
+        if (st && isFinite(st.lat)) { closeSheet(); map.easeTo({ center: [st.lng, st.lat], zoom: 16, duration: 500 }); }
       }
     });
     $('#stops-list').addEventListener('dblclick', (e) => {

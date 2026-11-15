@@ -4,7 +4,7 @@
    - tile mappa: cache-first con limite (solo tile viste)
    - API routing/geocodifica: MAI in cache
 */
-const VERSION = 'pasomaps-v17';
+const VERSION = 'pasomaps-v24';
 const TILE_CACHE = 'pasomaps-tiles';
 const TILE_LIMIT = 3000;
 
@@ -14,8 +14,8 @@ const SHELL = [
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+  'https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css',
+  'https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js'
 ];
 
 self.addEventListener('install', (e) => {
@@ -64,8 +64,9 @@ self.addEventListener('fetch', (e) => {
   if (url.hostname === 'api.tomtom.com' && url.pathname.indexOf('/map/') !== 0) return;
 
   // tile mappa
-  const isTile = /basemaps\.cartocdn\.com|tile\.openstreetmap\.org/.test(url.hostname) ||
-    (url.hostname === 'api.tomtom.com' && url.pathname.indexOf('/map/') === 0);
+  const isTile = /tile\.openstreetmap\.org/.test(url.hostname) ||
+    (url.hostname === 'api.tomtom.com' && url.pathname.indexOf('/map/') === 0) ||
+    (url.hostname === 'tiles.openfreemap.org' && url.pathname.indexOf('/planet/') === 0);
   if (isTile) {
     e.respondWith((async () => {
       const c = await caches.open(TILE_CACHE);
