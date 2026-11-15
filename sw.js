@@ -4,7 +4,7 @@
    - tile mappa: cache-first con limite (solo tile viste)
    - API routing/geocodifica: MAI in cache
 */
-const VERSION = 'pasomaps-v38';
+const VERSION = 'pasomaps-v40';
 const TILE_CACHE = 'pasomaps-tiles';
 const TILE_LIMIT = 3000;
 

@@ -1189,6 +1189,7 @@
         '<div class="stop-main" data-center="' + st.id + '">' +
         '<div class="stop-name">' + esc(st.name || 'Tappa ' + idx) + '</div>' +
         '<div class="stop-addr">' + esc(st.address || '') + '</div>' +
+        (st.approx ? '<div class="stop-note" style="color:#ffc98b">civico approssimato · verifica il pin</div>' : '') +
         (st.notes ? '<div class="stop-note">' + esc(st.notes) + '</div>' : '') +
         meta +
         '</div>' +
@@ -1403,6 +1404,44 @@
     return out;
   }
 
+  function civicInfo(addr) {
+    const m = String(addr || '').match(/^(.*?)(\d+)\s*[\/\-]?\s*([A-Za-z])\s*(bis|ter|quater)?\s*(,.*)?$/i);
+    if (!m) return null;
+    return { base: m[1].trim(), num: m[2], letter: m[3].toLowerCase(), suffix: (m[4] || '').toLowerCase(), tail: (m[5] || '').trim() };
+  }
+  const civicNorm = (s) => String(s || '').toLowerCase().replace(/[\s\/\-\.]/g, '');
+  function civicVariants(addr) {
+    const p = civicInfo(addr);
+    if (!p) return [addr];
+    const head = p.base + ' ' + p.num;
+    const ls = p.letter + p.suffix;
+    const tail = p.tail ? ' ' + p.tail : '';
+    const out = [addr];
+    const add = (v) => { if (out.indexOf(v) === -1) out.push(v); };
+    add(head + ' ' + ls + tail);
+    add(head + '/' + ls + tail);
+    add(head + tail);
+    return out;
+  }
+
+  async function geocodeWithVariants(q, center, cityLabel) {
+    const p = civicInfo(q);
+    const target = p ? civicNorm(p.num + p.letter + p.suffix) : '';
+    const variants = civicVariants(q);
+    let fallback = null, outside = false;
+    for (let i = 0; i < variants.length; i++) {
+      let rs = [];
+      try { rs = await geocodeNear(variants[i], center, 35); } catch (e) { }
+      const picked = pickBest(rs, center, cityLabel);
+      if (picked.outside) outside = true;
+      if (!picked.best) continue;
+      if (!target) return { best: picked.best, approx: false, outside: outside };
+      if (civicNorm(picked.best.num) === target) return { best: picked.best, approx: false, outside: outside };
+      if (!fallback) fallback = picked.best;
+    }
+    return { best: fallback, approx: !!fallback, outside: outside };
+  }
+
   async function geocode(q) {
     if (!q || q.trim().length < 3) return [];
     let out = [];
@@ -1477,6 +1516,7 @@
         $('#f-addr').value = keepTyped ? typed : (r.short || r.label);
         setCoords(r.lat, r.lng, keepTyped ? '' : (r.short || r.label));
         draft.pinned = false;
+        draft.approx = false;
         const civic = $('#f-civic');
         if (civic) {
           if (!r.num) {
@@ -1498,6 +1538,7 @@
       openPinPicker(picked, (lat, lng) => {
         picked = { lat: lat, lng: lng };
         draft.pinned = true;
+        draft.approx = false;
         $('#f-coords').textContent = 'Coordinate: ' + lat.toFixed(5) + ', ' + lng.toFixed(5) + ' · scelte a mano';
         const civic = $('#f-civic');
         if (civic) { civic.style.display = ''; civic.textContent = 'Pin spostato a mano: il percorso arriva esattamente qui.'; }
@@ -1565,10 +1606,10 @@
         if (!$('#f-addr').value) $('#f-addr').value = rs[0].short || rs[0].label;
       }
       if (isNew) {
-        S.giro.stops.push({ id: draft.id, name: name || address, address: address, lat: picked.lat, lng: picked.lng, notes: notes, pinned: !!draft.pinned });
+        S.giro.stops.push({ id: draft.id, name: name || address, address: address, lat: picked.lat, lng: picked.lng, notes: notes, pinned: !!draft.pinned, approx: !!draft.approx });
         S.session.skipped = S.session.skipped.filter((id) => id !== draft.id);
       } else {
-        st.name = name || address; st.address = address; st.lat = picked.lat; st.lng = picked.lng; st.notes = notes; st.pinned = !!draft.pinned;
+        st.name = name || address; st.address = address; st.lat = picked.lat; st.lng = picked.lng; st.notes = notes; st.pinned = !!draft.pinned; st.approx = !!draft.approx;
       }
       saveDB(); closeModal();
       renderStops(); drawMarkers(); renderGiroChrome();
@@ -2302,10 +2343,10 @@
           const t = tasks[cursor++];
           const q = t.s.query + ((t.cityLabel && t.s.query.toLowerCase().indexOf(t.cityLabel.toLowerCase()) === -1) ? ', ' + t.cityLabel : '');
           try {
-            const rs = await geocodeNear(q, t.center, 35);
-            const picked = pickBest(rs, t.center, t.cityLabel);
-            t.res = picked.best;
-            if (picked.outside) t.outside = true;
+            const res = await geocodeWithVariants(q, t.center, t.cityLabel);
+            t.res = res.best;
+            if (res.outside) t.outside = true;
+            if (res.approx) t.approx = true;
           } catch (e) { t.res = null; }
           tick();
         }
@@ -2313,12 +2354,13 @@
       await Promise.all(Array.from({ length: Math.min(workers, total) }, work));
     }
 
-    let withNum = 0, noNum = 0, failed = 0, outside = 0;
+    let withNum = 0, noNum = 0, failed = 0, outside = 0, approx = 0;
     const failedAddrs = [];
     tasks.forEach((t) => {
       const r = t.res || null;
       if (r) { if (r.num) withNum++; else noNum++; } else if (geoOn) failed++;
       if (t.outside) outside++;
+      if (t.approx) approx++;
       if (geoOn && !r && t.s.address) failedAddrs.push(t.s.address + (t.cityLabel ? ' — ' + t.cityLabel : ''));
       t.ng.stops.push({
         id: uid(),
@@ -2326,7 +2368,8 @@
         address: t.s.address || '',
         lat: r ? r.lat : null,
         lng: r ? r.lng : null,
-        notes: t.s.notes || ''
+        notes: t.s.notes || '',
+        approx: !!t.approx
       });
     });
 
@@ -2335,7 +2378,7 @@
     const totStops = tasks.length;
     openModal('<div class="modal-head"><b>Importazione completata</b><button class="x" id="i-done">✕</button></div>' +
       '<p class="hint" style="margin-top:-6px"><b>' + created.length + ' giri</b> e <b>' + totStops + ' tappe</b> importati.</p>' +
-      (geoOn ? '<p class="hint">Civico esatto: <b>' + withNum + '</b><br>Senza civico: <b>' + noNum + '</b><br>Non trovate: <b>' + failed + '</b>' + (outside ? '<br>Fuori zona: <b>' + outside + '</b>' : '') + '</p>' : '<p class="hint">Nessuna ricerca coordinate: apri le tappe e usa “Posiziona il pin”.</p>') +
+      (geoOn ? '<p class="hint">Civico esatto: <b>' + withNum + '</b><br>Senza civico: <b>' + noNum + '</b><br>Non trovate: <b>' + failed + '</b>' + (outside ? '<br>Fuori zona: <b>' + outside + '</b>' : '') + (approx ? '<br>Civico approssimato: <b>' + approx + '</b>' : '') + '</p>' : '<p class="hint">Nessuna ricerca coordinate: apri le tappe e usa “Posiziona il pin”.</p>') +
       (failedAddrs.length ? '<details style="margin-top:6px"><summary style="cursor:pointer;color:#9db4d6;font-size:12px">Indirizzi da controllare (' + failedAddrs.length + ')</summary><div style="max-height:150px;overflow:auto;font-size:11.5px;color:#93a3bd;line-height:1.5;margin-top:6px">' + failedAddrs.slice(0, 40).map((a) => '• ' + esc(a)).join('<br>') + (failedAddrs.length > 40 ? '<br>…' : '') + '</div></details>' : '') +
       '<p class="hint">Le tappe senza civico, non trovate o fuori zona restano da sistemare: apri la tappa e sposta il pin sul portone.</p>' +
       '<button class="btn primary" id="i-done2" style="width:100%;margin-top:10px">Vai ai giri</button>');
@@ -2372,10 +2415,10 @@
       const q = s.address + ((cityLabel && s.address.toLowerCase().indexOf(cityLabel.toLowerCase()) === -1) ? ', ' + cityLabel : '');
       let best = null;
       try {
-        const rs = await geocodeNear(q, center, 35);
-        const picked = pickBest(rs, center, cityLabel);
-        best = picked.best;
-        if (picked.outside) outside++;
+        const res = await geocodeWithVariants(q, center, cityLabel);
+        best = res.best;
+        if (res.outside) outside++;
+        if (res.approx) s.approx = true; else s.approx = false;
       } catch (e) { }
       if (best) { s.lat = best.lat; s.lng = best.lng; ok++; }
       else if (mode === 'all' && center && hasCoords(s) && hav(center, s) > 45000) { s.lat = null; s.lng = null; cleared++; }
