@@ -51,7 +51,7 @@
   /* =============================== B. DATI =============================== */
   const DB_KEY = 'pasomaps.db.v1';
   const DEFAULT_TRUCK = { height: 2.8, width: 2.1, length: 6.0, weight: 3.5, axle_load: 1.8 };
-  const DEFAULT_SETTINGS = { voice: true, brightness: 1, autoAdvance: true, trafficKey: '', tomtomKey: '', mapStyle: 4, mapProvider: 'openfreemap', lastGiroId: null };
+  const DEFAULT_SETTINGS = { voice: true, brightness: 1, autoAdvance: true, ztlWarn: true, trafficKey: '', tomtomKey: '', mapStyle: 4, mapProvider: 'openfreemap', lastGiroId: null };
   const PALETTE = ['#3b82f6', '#22d3ee', '#a78bfa', '#f472b6', '#f59e0b', '#34d399', '#60a5fa', '#fb7185', '#c084fc', '#facc15', '#2dd4bf', '#f97316', '#818cf8', '#4ade80'];
   const APP_BUILD = (() => {
     try {
@@ -445,7 +445,7 @@
   /* =============================== E. MAPPA (MapLibre GL) =============================== */
   const TILES_OSM = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
   const TILES_TT = 'https://api.tomtom.com/map/1/tile/basic/main/{z}/{x}/{y}.png?key=';
-  const STYLE_OFM = 'https://tiles.openfreemap.org/styles/bright';
+  const STYLE_OFM = 'https://tiles.openfreemap.org/styles/liberty';  // liberty = edifici estrusi in 3D (layer building-3d)
   const OFM_ATTRIB = '&copy; OpenFreeMap &copy; OpenMapTiles &copy; OpenStreetMap';
 
   let map = null;
@@ -737,6 +737,16 @@
   function routeStartPoints() {
     const stops = activeStops();
     const fromMe = !!(S.me && (Date.now() - S.me.ts) < 10 * 60 * 1000);
+    if (S.me) {
+      const stale = (Date.now() - S.me.ts) > 10 * 60 * 1000;
+      const acc = (S.me.acc != null && isFinite(S.me.acc)) ? S.me.acc : null;
+      const bad = stale || (acc != null && acc > 50);
+      const el = $('#me-acc');
+      if (el) {
+        el.style.display = bad ? 'flex' : 'none';
+        el.textContent = stale ? 'GPS vecchio' : (acc != null && acc > 50 ? 'GPS impreciso · +' + Math.round(acc) + ' m' : '');
+      }
+    }
     if (!stops.length) return { points: [], fromMe: false };
     if (!fromMe) return { points: stops.map(stopPoint), fromMe: false };
     if (hav(S.me, stopPoint(stops[0])) < 45) return { points: stops.map(stopPoint), fromMe: false };
@@ -884,6 +894,14 @@
     const pos = (Nav.active && S.meSnap) ? S.meSnap : S.me;
     const el = document.createElement('div');
     el.className = 'me';
+    const acc = (S.me.acc != null && isFinite(S.me.acc)) ? S.me.acc : null;
+    const stale = (Date.now() - S.me.ts) > 10 * 60 * 1000;
+    if (stale || (acc != null && acc > 50)) {
+      const b = document.createElement('div');
+      b.className = 'me-badge';
+      b.textContent = stale ? 'GPS vecchio' : 'GPS +' + Math.round(acc) + ' m';
+      el.appendChild(b);
+    }
     meMarker = new maplibregl.Marker({ element: el, anchor: 'center' })
       .setLngLat([pos.lng, pos.lat]).addTo(map);
   }
@@ -1401,6 +1419,23 @@
         }
       } catch (e) { console.warn('photon', e); }
     }
+    if (!out.length) {
+      // Pelias (Mapzen) — gratuito, senza chiave, buona copertura dei civici italiani
+      try {
+        const res = await fetch('https://pelias.mapzen.com/v1/search?text=' + encodeURIComponent(q) + '&size=6&country=ita&boundary.country=ITA');
+        if (res.ok) {
+          const j = await res.json();
+          (j.features || []).forEach((f) => {
+            const props = f.properties || {};
+            const a = props.address || {};
+            const street = [a.street, a.number].filter(Boolean).join(' ');
+            const c = f.geometry && f.geometry.coordinates;
+            if (!c) return;
+            out.push({ label: props.label || street, short: street || props.label || '', lat: c[1], lng: c[0], num: a.number || '', city: a.locality || a.region || '' });
+          });
+        }
+      } catch (e) { console.warn('pelias', e); }
+    }
     return out;
   }
 
@@ -1663,6 +1698,12 @@
     if (!('geolocation' in navigator)) { toast('GPS non disponibile su questo browser', 'bad'); return; }
     const act = activeStops();
     if (!act.length) { toast('Nessuna tappa da raggiungere', 'bad'); return; }
+    if (db.settings.ztlWarn !== false) {
+      const city = (S.giro && S.giro.city) ? S.giro.city.trim() : '';
+      if (city) {
+        setTimeout(() => toast('Routing senza autostrada, ma ' + esc(city) + ' ha ZTL/divieti locali che il percorso non conosce: controlla la segnaletica prima di entrare.', 'warn'), 900);
+      }
+    }
     Nav.active = true; Nav.spoken = {}; Nav.offCount = 0; S.follow = true;
     keepAwake(true);
     $('#route-state').classList.add('hide');
@@ -1801,7 +1842,7 @@
     // inversione a U: stiamo tornando indietro lungo il percorso
     const speed = (typeof S.me.speed === 'number' && isFinite(S.me.speed)) ? S.me.speed : 0;
     if (Nav.lastAlong == null) Nav.lastAlong = pr.along;
-    else if (speed > 3 && pr.along < Nav.lastAlong - 25) {
+    else if (speed > 5 && pr.along < Nav.lastAlong - 40) {
       Nav.lastAlong = null;
       toast('Inversione rilevata · ricalcolo', 'bad');
       refreshNavRoute();
@@ -1988,6 +2029,7 @@
       '<div class="section-t">Navigazione</div>' +
       '<div class="switch"><div class="lbl">Voce<small>Istruzioni lette ad alta voce</small></div><button class="tgl ' + (db.settings.voice ? 'on' : '') + '" id="s-voice"></button></div>' +
       '<div class="switch"><div class="lbl">Passa da sola alla tappa dopo<small>Quando arrivi, segna fatta e riparte</small></div><button class="tgl ' + (db.settings.autoAdvance ? 'on' : '') + '" id="s-auto"></button></div>' +
+      '<div class="switch"><div class="lbl">Avvisa ZTL/divieti locali<small>Toast quando avvi la navigazione in una città</small></div><button class="tgl ' + (db.settings.ztlWarn !== false ? 'on' : '') + '" id="s-ztl"></button></div>' +
       '<div class="switch"><div class="lbl">Autostrade<small>Bloccate: i percorsi non le usano mai. Statali e provinciali sì.</small></div><button class="tgl on locked" id="s-hw" style="opacity:.55"></button></div>' +
       '<div class="section-t">Mappa</div>' +
       '<div class="field"><label>Luminosità mappa</label><input id="s-bright" type="range" min="0.7" max="1.3" step="0.05" value="' + db.settings.brightness + '"><div class="hint">La mappa è chiara; il resto dell’app resta scuro.</div></div>' +
@@ -1997,7 +2039,7 @@
       '<div class="section-t">Traffico (TomTom)</div>' +
       '<div class="field"><label>Chiave API TomTom</label>' +
       '<input id="s-tt" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="incolla qui la chiave" value="' + esc(db.settings.tomtomKey || '') + '">' +
-      '<div class="hint">Con la chiave i tempi e i tratti colorati usano il traffico TomTom. La chiave resta <b>solo su questo telefono</b> e non finisce nel backup né nel repository. Senza chiave l’app funziona come prima, con tempi senza traffico.</div></div>' +
+      '<div class="hint">Con la chiave i tempi e i tratti colorati usano il traffico TomTom. La chiave resta <b>solo su questo telefono</b> e non finisce nel backup né nel repository. Senza chiave l’app funziona come prima, con tempi senza traffico.<br><br>La chiave è <b>consigliata</b>: senza di essa l’import degli indirizzi trova meno civici e più lenta (usa Nominatim). TomTom è gratuito e basta per un uso personale.</div></div>' +
       '<div class="btn-row"><button class="btn" id="s-tt-verify">Verifica chiave</button><button class="btn" id="s-tt-clear">Rimuovi</button></div>' +
       '<div class="section-t">Dati</div>' +
       '<div class="btn-row"><button class="btn" id="s-export">Esporta backup</button><button class="btn" id="s-import">Importa</button></div>' +
@@ -2021,6 +2063,7 @@
     bindTruck('t-k', 'weight', 1, 44);
     $('#s-voice').addEventListener('click', (e) => { db.settings.voice = !db.settings.voice; e.target.classList.toggle('on', db.settings.voice); saveDB(); if (db.settings.voice) speak('Voce attiva'); });
     $('#s-auto').addEventListener('click', (e) => { db.settings.autoAdvance = !db.settings.autoAdvance; e.target.classList.toggle('on', db.settings.autoAdvance); saveDB(); });
+    $('#s-ztl').addEventListener('click', (e) => { db.settings.ztlWarn = db.settings.ztlWarn === false; e.target.classList.toggle('on', db.settings.ztlWarn !== false); saveDB(); });
     $('#s-hw').addEventListener('click', () => toast('Le autostrade sono escluse per scelta: non si possono attivare', 'good'));
     $('#s-bright').addEventListener('input', (e) => {
       db.settings.brightness = parseFloat(e.target.value) || 1.35;
