@@ -214,6 +214,7 @@
     p.set('vehicleAxleWeight', String(Math.round((+t.axle_load || 1.8) * 1000)));
     p.set('vehicleCommercial', 'true');
     p.set('language', 'it-IT');
+    p.set('instructionsType', 'text');
     p.set('computeTravelTimeFor', 'all');
     p.append('sectionType', 'traffic');
     p.append('sectionType', 'motorway');
@@ -652,14 +653,21 @@
     }
   }
 
-  function trafficColor(mag) { return mag >= 3 ? '#ef4444' : mag === 2 ? '#f97316' : '#f59e0b'; }
+  function trafficColor(delaySec) {
+    if (delaySec >= 300) return '#ef4444';   // oltre 5 min di ritardo
+    if (delaySec >= 120) return '#f97316';   // 2-5 min
+    if (delaySec >= 30) return '#f59e0b';    // mezzo minuto - 2 min
+    return null;                             // nessun ritardo: percorso resta blu
+  }
 
   function drawSections(layer, coords, sections) {
     if (!coords || !sections) return;
     sections.forEach((s) => {
+      const col = trafficColor(s.delay || 0);
+      if (!col) return;
       const seg = coords.slice(Math.max(0, s.from), Math.min(coords.length, s.to + 1)).map((c) => [c.lat, c.lng]);
       if (seg.length < 2) return;
-      L.polyline(seg, { color: trafficColor(s.mag), weight: 5, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }).addTo(layer);
+      L.polyline(seg, { color: col, weight: 5, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }).addTo(layer);
     });
   }
 

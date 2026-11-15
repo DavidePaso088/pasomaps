@@ -3,7 +3,7 @@
    - tile mappa: cache-first con limite
    - API di routing/geocodifica: MAI in cache
 */
-const VERSION = 'pasomaps-v4';
+const VERSION = 'pasomaps-v5';
 const SHELL = [
   './',
   './index.html',
