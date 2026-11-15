@@ -1,33 +1,49 @@
 /* PasoMaps — service worker
-   - app shell in cache (funziona anche senza rete)
-   - tile mappa: cache-first con limite
-   - API di routing/geocodifica: MAI in cache
+   - shell + asset versionati: precaricati all'installazione
+   - navigazione: rete, altrimenti cache (mai salvare errori)
+   - tile mappa: cache-first con limite (solo tile viste)
+   - API routing/geocodifica: MAI in cache
 */
-const VERSION = 'pasomaps-v8';
+const VERSION = 'pasomaps-v11';
+const TILE_CACHE = 'pasomaps-tiles';
+const TILE_LIMIT = 3000;
+
 const SHELL = [
   './',
   './index.html',
-  './css/app.css',
-  './js/app.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
 ];
-const TILE_CACHE = 'pasomaps-tiles';
-const TILE_LIMIT = 600;
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(
-    caches.open(VERSION).then((c) => Promise.allSettled(SHELL.map((u) => c.add(new Request(u, { mode: 'no-cors' }))))).then(() => self.skipWaiting())
-  );
+  e.waitUntil((async () => {
+    const c = await caches.open(VERSION);
+    await Promise.allSettled(SHELL.map((u) => c.add(new Request(u, { mode: 'no-cors' }))));
+    // precarica gli asset con ?v=... citati nell'HTML, così l'offline funziona al primo colpo
+    try {
+      const res = await fetch('./index.html', { cache: 'reload' });
+      if (res && res.ok) {
+        await c.put('./index.html', res.clone());
+        const html = await res.text();
+        const urls = Array.from(html.matchAll(/(?:src|href)="([^"]*\.(?:js|css)\?[^"]+)"/g))
+          .map((m) => m[1])
+          .filter((u) => !/^https?:/.test(u));
+        await Promise.allSettled(urls.map((u) => c.add(new Request(u, { mode: 'no-cors' }))));
+      }
+    } catch (err) { /* offline al primo avvio: pazienza */ }
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== VERSION && k !== TILE_CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())
-  );
+  e.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((k) => k !== VERSION && k !== TILE_CACHE).map((k) => caches.delete(k)));
+    await self.clients.claim();
+  })());
 });
 
 async function trimTiles() {
@@ -44,7 +60,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
 
   // API: sempre rete, mai cache
-  if (/valhalla|nominatim|photon|googleapis/.test(url.hostname)) return;
+  if (/valhalla|nominatim|photon|api\.tomtom\.com/.test(url.hostname)) return;
 
   // tile mappa
   if (/basemaps\.cartocdn\.com|tile\.openstreetmap\.org/.test(url.hostname)) {
@@ -57,23 +73,26 @@ self.addEventListener('fetch', (e) => {
         if (res && (res.ok || res.type === 'opaque')) { c.put(req, res.clone()); trimTiles(); }
         return res;
       } catch (err) {
-        return hit || Response.error();
+        return Response.error();
       }
     })());
     return;
   }
 
-  // navigazione: rete, poi cache (aggiornamenti rapidi)
+  // navigazione: rete se possibile, poi cache. Non salvare mai risposte d'errore.
   if (req.mode === 'navigate') {
     e.respondWith((async () => {
+      const c = await caches.open(VERSION);
       try {
         const res = await fetch(req);
-        const c = await caches.open(VERSION);
-        c.put('./index.html', res.clone());
+        if (res && res.ok && res.type === 'basic') await c.put('./index.html', res.clone());
+        if (res && res.ok) return res;
+        const hit = await c.match('./index.html', { ignoreSearch: true });
+        if (hit) return hit;
         return res;
       } catch (err) {
-        const c = await caches.open(VERSION);
-        return (await c.match('./index.html')) || (await c.match('./')) || Response.error();
+        const hit = await c.match('./index.html', { ignoreSearch: true });
+        return hit || Response.error();
       }
     })());
     return;
@@ -82,9 +101,9 @@ self.addEventListener('fetch', (e) => {
   // asset: cache-first con aggiornamento in background
   e.respondWith((async () => {
     const c = await caches.open(VERSION);
-    const hit = await c.match(req);
-    const net = fetch(req).then((res) => {
-      if (res && res.ok) c.put(req, res.clone());
+    const hit = await c.match(req, { ignoreSearch: false });
+    const net = fetch(req).then(async (res) => {
+      if (res && res.ok) await c.put(req, res.clone());
       return res;
     }).catch(() => null);
     return hit || (await net) || Response.error();

@@ -53,6 +53,8 @@
   const DEFAULT_TRUCK = { height: 2.8, width: 2.1, length: 6.0, weight: 3.5, axle_load: 1.8 };
   const DEFAULT_SETTINGS = { voice: true, brightness: 0.9, autoAdvance: true, trafficKey: '', tomtomKey: '', mapStyle: 2, lastGiroId: null };
   const PALETTE = ['#3b82f6', '#22d3ee', '#a78bfa', '#f472b6', '#f59e0b', '#34d399', '#60a5fa', '#fb7185', '#c084fc', '#facc15', '#2dd4bf', '#f97316', '#818cf8', '#4ade80'];
+  const ROUTE_CACHE = 'pasomaps.route.';
+  let offlineWarned = 0;
 
   let db = null;
   let saveTimer = null;
@@ -376,10 +378,18 @@
       };
     });
     const sum = (j.trip && j.trip.summary) || {};
+    const all = [];
+    legs.forEach((l) => l.coords.forEach((p) => {
+      const last = all[all.length - 1];
+      if (!last || last.lat !== p.lat || last.lng !== p.lng) all.push(p);
+    }));
     return {
       legs: legs,
+      coords: all,
+      sections: [],
       km: sum.length || legs.reduce((a, l) => a + l.km, 0),
       sec: sum.time || legs.reduce((a, l) => a + l.sec, 0),
+      trafficDelay: 0,
       highway: !!sum.has_highway || legs.some((l) => l.highway)
     };
   }
@@ -567,6 +577,13 @@
     drawMarkers();
     updateMeMarker();
     updateEta();
+    const cached = loadRouteCache(g.id);
+    if (cached) {
+      S.preview = cached; S.shownRoute = cached; S.previewFromMe = !!cached.fromMe;
+      drawPreview(cached);
+      setRouteState('Ultimo percorso salvato · ' + fmtKmVal(cached.km) + ' · ' + timeParts(cached.sec).main + ' ' + timeParts(cached.sec).unit, '');
+      updateEta(); renderStops();
+    }
     computePreview(true);
     if (!g.stops.length) {
       setTimeout(() => openStopEditor(null, {}), 220);
@@ -637,6 +654,7 @@
       S.altOn = false; S.previewAlt = null;
       clearLayer(LAY.alt);
       drawPreview(r);
+      saveRouteCache(S.giro, r);
       const hw = r.motorwayWarning;
       const tt = r.source === 'tomtom';
       const trafficTxt = tt ? (r.trafficDelay > 90 ? 'traffico +' + Math.round(r.trafficDelay / 60) + ' min' : 'traffico ok') : 'senza traffico';
@@ -650,9 +668,21 @@
       if (fit && !Nav.active) fitAll();
     } catch (e) {
       console.warn(e);
-      S.preview = null; S.shownRoute = null;
-      setRouteState('Percorso non disponibile (' + (e.message || 'rete') + ') · tocca qui per riprovare', 'bad');
-      updateEta();
+      const cached = S.preview && S.preview.cached ? S.preview : loadRouteCache(S.giro.id);
+      if (cached) {
+        S.preview = cached; S.shownRoute = cached; S.previewFromMe = !!cached.fromMe;
+        drawPreview(cached);
+        setRouteState('Senza rete · ultimo percorso salvato (' + fmtKmVal(cached.km) + ' · ' + timeParts(cached.sec).main + ' ' + timeParts(cached.sec).unit + ')', 'warn');
+        updateEta(); renderStops();
+        if (Date.now() - offlineWarned > 60000) {
+          offlineWarned = Date.now();
+          toast('Nessuna rete: uso l’ultimo percorso salvato', 'bad');
+        }
+      } else {
+        S.preview = null; S.shownRoute = null;
+        setRouteState('Nessuna rete e nessun percorso salvato · tocca per riprovare', 'bad');
+        updateEta();
+      }
     } finally {
       S.computing = false;
       if (S.pendingCompute) { S.pendingCompute = false; setTimeout(() => computePreview(false), 60); }
@@ -718,10 +748,71 @@
 
   function clearLayer(l) { if (l) l.clearLayers(); }
 
+  /* ---------- cache del percorso: l'app resta utile senza rete ---------- */
+  function saveRouteCache(g, r) {
+    if (!g || !r || !r.coords || r.coords.length < 2) return;
+    try {
+      let coords = r.coords;
+      let sections = r.sections || [];
+      if (coords.length > 6000) { coords = coords.filter((c, i) => i % 2 === 0); sections = []; }
+      const payload = {
+        at: Date.now(),
+        km: r.km, sec: r.sec,
+        trafficDelay: r.trafficDelay || 0,
+        source: r.source || 'valhalla',
+        fromMe: !!S.previewFromMe,
+        coords: coords.map((c) => [+c.lat.toFixed(5), +c.lng.toFixed(5)]),
+        sections: sections.map((s) => ({ from: s.from, to: s.to, mag: s.mag, delay: s.delay })),
+        legs: r.legs.map((l) => ({ km: l.km, sec: l.sec, total: l.total }))
+      };
+      localStorage.setItem(ROUTE_CACHE + g.id, JSON.stringify(payload));
+    } catch (e) { console.warn('cache percorso', e); }
+  }
+
+  function loadRouteCache(id) {
+    try {
+      const raw = localStorage.getItem(ROUTE_CACHE + id);
+      if (!raw) return null;
+      const p = JSON.parse(raw);
+      if (!p || !Array.isArray(p.coords) || p.coords.length < 2) return null;
+      const coords = p.coords.map((c) => ({ lat: c[0], lng: c[1] }));
+      return {
+        cached: true,
+        at: p.at,
+        coords: coords,
+        sections: p.sections || [],
+        km: p.km,
+        sec: p.sec,
+        trafficDelay: p.trafficDelay || 0,
+        source: p.source,
+        fromMe: !!p.fromMe,
+        legs: (p.legs || []).map((l) => ({
+          km: l.km, sec: l.sec, total: l.total || l.km * 1000,
+          coords: [], cum: [], maneuvers: [], highway: false, toll: false, delay: 0
+        })),
+        highway: false,
+        motorwayWarning: false
+      };
+    } catch (e) { return null; }
+  }
+
+  function pruneRouteCache() {
+    try {
+      const ids = new Set((db.giri || []).map((g) => g.id));
+      Object.keys(localStorage).forEach((k) => {
+        if (k.indexOf(ROUTE_CACHE) === 0 && !ids.has(k.slice(ROUTE_CACHE.length))) localStorage.removeItem(k);
+      });
+    } catch (e) { }
+  }
+
   function fitAll() {
     if (!map) return;
     const pts = [];
-    if (S.shownRoute) S.shownRoute.legs.forEach((l) => l.coords.forEach((c) => pts.push([c.lat, c.lng])));
+    if (S.shownRoute && S.shownRoute.coords && S.shownRoute.coords.length > 1) {
+      S.shownRoute.coords.forEach((c) => pts.push([c.lat, c.lng]));
+    } else if (S.shownRoute) {
+      S.shownRoute.legs.forEach((l) => l.coords.forEach((c) => pts.push([c.lat, c.lng])));
+    }
     if (!pts.length && S.giro) S.giro.stops.forEach((s) => { if (isFinite(s.lat)) pts.push([s.lat, s.lng]); });
     if (S.me) pts.push([S.me.lat, S.me.lng]);
     if (!pts.length) return;
@@ -1634,6 +1725,7 @@
   function init() {
     db = loadDB();
     applyBrightness();
+    pruneRouteCache();
     renderHome();
 
     bind();

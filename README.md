@@ -148,6 +148,12 @@ diverso, cambiali subito.**
 - **Server di routing**: è l’istanza pubblica `valhalla1.openstreetmap.de`, adatta a un
   uso personale leggero. Se un giorno risponde lento o blocca, va sostituita con un
   servizio con chiave (GraphHopper, OpenRouteService, Stadia, self-hosted).
+- **Senza rete**: la mappa delle zone che hai già guardato resta disponibile (cache dei
+  tile) e l'ultimo percorso calcolato viene salvato, con navigazione, manovre e voce.
+  Non si può però **ricalcolare** né aggiornare il traffico senza connessione, e non
+  esiste un pulsante “scarica la mappa”: la policy di OpenStreetMap vieta il download
+  preventivo dei tile. Chi vuole mappe offline complete deve passare a un fornitore
+  che le concede (TomTom, Mapbox) o a tile propri.
 - **Dati sul telefono**: `localStorage`. Se cancelli i dati del browser o cambi telefono
   senza backup, i giri spariscono. `Impostazioni → Esporta backup` produce un JSON;
   `Importa` lo rimette dentro.
