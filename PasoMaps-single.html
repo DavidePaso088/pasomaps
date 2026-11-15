@@ -2379,12 +2379,34 @@ b,strong{font-weight:700}
   function openNavMenu(stop) {
     S.pendingStop = stop || activeStops()[0] || null;
     if (!S.pendingStop) { toast('Nessuna tappa selezionata', 'bad'); return; }
+    if (!$('#nav-osmand')) {
+      const b = document.createElement('button');
+      b.className = 'btn';
+      b.id = 'nav-osmand';
+      b.style.padding = '16px';
+      b.innerHTML = '🟠 Apri OsmAnd <small style="color:#8fa1bd;font-weight:400">(offline, profili camion)</small>';
+      b.addEventListener('click', () => { $('#navmenu').classList.remove('on'); if (S.pendingStop) openOsmAndFor(S.pendingStop); });
+      $('#nav-google').parentNode.insertBefore(b, $('#nav-google').nextSibling);
+    }
+    const hint = $('#navmenu .hint');
+    if (hint) {
+      hint.innerHTML = 'La navigazione in app rispetta <b>altezza, peso e larghezza</b> del mezzo. Google Maps accetta “evita autostrade”, ma non conosce le misure del camioncino. OsmAnd funziona <b>offline</b> e ha profili camion, ma va configurato a mano (profilo mezzo, ZTL): il tasto apre il selettore app di Android, scegli OsmAnd.';
+    }
     $('#navmenu').classList.add('on');
   }
 
   function openGoogleFor(st) {
     const u = 'https://www.google.com/maps/dir/?api=1&destination=' + st.lat + ',' + st.lng + '&travelmode=driving&dir_action=navigate&avoid=highways';
     window.open(u, '_blank');
+  }
+
+  function openOsmAndFor(st) {
+    // OsmAnd: intent Android. Apre OsmAnd (o chiede con quale app aprire), funziona offline.
+    const nm = encodeURIComponent((st.name || st.address || 'tappa').slice(0, 60));
+    const coords = st.lat + ',' + st.lng;
+    const geo = 'geo:' + coords + '?q=' + coords + '(' + nm + ')';
+    try { window.location.href = geo; }
+    catch (e) { window.open('https://osmand.net/map/?pin=' + coords, '_blank'); }
   }
 
   /* =============================== N. MODALI =============================== */
@@ -2485,6 +2507,11 @@ b,strong{font-weight:700}
       '<div class="hint">Con la chiave i tempi e i tratti colorati usano il traffico TomTom. La chiave resta <b>solo su questo telefono</b> e non finisce nel backup né nel repository. Senza chiave l’app funziona come prima, con tempi senza traffico.</div></div>' +
       '<div class="btn-row"><button class="btn" id="s-tt-verify">Verifica chiave</button><button class="btn" id="s-tt-clear">Rimuovi</button></div>' +
       '<div class="section-t">Dati</div>' +
+      (function () {
+        const d = db.lastExport ? Date.now() - db.lastExport : null;
+        const days = d == null ? null : Math.floor(d / 864e5);
+        return days == null ? '' : ('<p class="hint" style="margin:0 0 8px">Ultimo backup: ' + (days < 1 ? 'oggi' : days + (days === 1 ? ' giorno' : ' giorni') + ' fa') + (days >= 7 ? ' · <span style="color:#ffb4b4">Fai un backup</span>' : '') + '</p>');
+      })() +
       '<div class="btn-row"><button class="btn" id="s-export">Esporta backup</button><button class="btn" id="s-import">Importa</button></div>' +
       '<button class="btn" id="s-import-list" style="width:100%;margin-top:9px">Importa elenco (testo/CSV)</button>' +
       '<button class="btn" id="s-reset-day" style="width:100%;margin-top:9px">Azzera il giro di oggi</button>' +
