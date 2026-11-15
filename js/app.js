@@ -1373,15 +1373,32 @@
     if (err && err.code === 1 && Nav.active) stopNav();
   }
 
+  function pointAhead(path, p, meters) {
+    const pr = projectOnPath(path, p);
+    const target = Math.min(path.total - 1, pr.along + meters);
+    let i = 1;
+    while (i < path.cum.length - 1 && path.cum[i] < target) i++;
+    const a = path.coords[i - 1], b = path.coords[i];
+    const seg = (path.cum[i] - path.cum[i - 1]) || 1;
+    const t = Math.max(0, Math.min(1, (target - path.cum[i - 1]) / seg));
+    return { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+  }
+
   function onFix(pos) {
     S.me = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, ts: Date.now(), head: pos.coords.heading };
     updateMeMarker();
     if (S.follow !== false) {
       if (!map) return;
       const z = Math.max(map.getZoom(), 16);
-      const d = map.getCenter().distanceTo(L.latLng(S.me.lat, S.me.lng));
-      if (d > 25) map.setView([S.me.lat, S.me.lng], z, { animate: true, duration: 0.6 });
-      else if (map.getZoom() < z) map.setZoom(z);
+      if (Nav.active && Nav.route && Nav.route.coords && Nav.route.coords.length > 2) {
+        // in navigazione guardo avanti: il puntino resta nel basso dello schermo
+        const ahead = pointAhead({ coords: Nav.route.coords, cum: Nav.route.cum, total: Nav.route.total }, S.me, 90);
+        map.setView([ahead.lat, ahead.lng], z, { animate: true, duration: 0.5 });
+      } else {
+        const d = map.getCenter().distanceTo(L.latLng(S.me.lat, S.me.lng));
+        if (d > 25) map.setView([S.me.lat, S.me.lng], z, { animate: true, duration: 0.6 });
+        else if (map.getZoom() < z) map.setZoom(z);
+      }
     }
     if (!Nav.active) { updateEta(); return; }
     if (!Nav.route) { refreshNavRoute(); return; }
@@ -1945,7 +1962,7 @@
     }
     // iOS: le voci arrivano in ritardo
     if ('speechSynthesis' in window) window.speechSynthesis.onvoiceschanged = () => { voiceIt = null; };
-    window.PasoMaps = { db: () => db, S: S, Nav: Nav, computePreview: computePreview };
+    window.PasoMaps = { db: () => db, S: S, Nav: Nav, getMap: () => map, computePreview: computePreview };
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
