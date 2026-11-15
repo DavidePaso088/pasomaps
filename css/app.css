@@ -16,7 +16,7 @@
   --r:18px;
   --safe-b:env(safe-area-inset-bottom,0px);
   --safe-t:env(safe-area-inset-top,0px);
-  --map-filter:grayscale(1) invert(1) brightness(0.9) contrast(1.08);
+  --map-filter:brightness(1) contrast(1.02);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;overflow:hidden}
@@ -119,15 +119,15 @@ b,strong{font-weight:700}
 /* ---------- schermata giro ---------- */
 #s-giro{display:none}
 #s-giro.on{display:flex}
-.map-shell{position:relative;flex:1 1 auto;min-height:0;background:#0b1220}
-#map{position:absolute;inset:0;z-index:1;background:#0b1220}
+.map-shell{position:relative;flex:1 1 auto;min-height:0;background:#e9e9e6}
+#map{position:absolute;inset:0;z-index:1;background:#e9e9e6}
 .leaflet-tile-pane{filter:var(--map-filter)}
 .leaflet-control-attribution{
   background:rgba(8,13,24,.7)!important;color:#8395b1!important;font-size:9.5px!important;
   backdrop-filter:blur(6px);border-radius:8px 0 0 0;
 }
 .leaflet-control-attribution a{color:#9db4d6!important}
-.leaflet-container{background:#0b1220;font-family:inherit}
+.leaflet-container{background:#e9e9e6;font-family:inherit}
 .leaflet-bar a{background:#131c2e;color:#eaf1ff;border-color:rgba(255,255,255,.1)}
 
 .map-top{

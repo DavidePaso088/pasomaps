@@ -16,7 +16,7 @@ profilo *truck*), la posizione è quella del telefono, la navigazione parla.
 | Scelta manuale del giro del giorno | ✅ |
 | Tappe con indirizzo cercato o posizione GPS | ✅ |
 | Note per tappa: piano, citofono, portineria, garage… | ✅ |
-| Mappa 78% dello schermo, tema scuro, percorso blu | ✅ |
+| Mappa 78% dello schermo, **mappa chiara** su app scura, percorso blu | ✅ |
 | Sotto la mappa: minuti e km alla prossima tappa + ora di arrivo | ✅ |
 | Tasto “Tappe” in basso: elenco scorrevole, si posiziona da solo sulla tappa attuale | ✅ |
 | Saltare una tappa (“⤼”) senza perderla per le prossime settimane | ✅ |
@@ -179,7 +179,7 @@ PasoMaps/
 
 Servizi esterni usati, tutti senza chiave:
 
-- **Tile mappa**: OpenStreetMap standard, resa scura via filtro CSS (niente chiavi, niente CARTO).
+- **Tile mappa**: OpenStreetMap standard, stile chiaro (niente chiavi, niente CARTO).
 - **Routing**: Valhalla, profilo truck.
 - **Geocodifica**: Nominatim con fallback Photon.
 - **Leaflet** da unpkg.
