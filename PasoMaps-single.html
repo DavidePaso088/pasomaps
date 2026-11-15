@@ -1665,9 +1665,23 @@ b,strong{font-weight:700}
     try {
       const rs = await geocode(key + ', Italia');
       const r = rs && rs[0];
-      if (r) { cityCenterCache[key] = { lat: r.lat, lng: r.lng }; return cityCenterCache[key]; }
+      if (r) {
+        const out = { lat: r.lat, lng: r.lng, city: r.city || String(name).trim() };
+        cityCenterCache[key] = out;
+        return out;
+      }
     } catch (e) { }
     return null;
+  }
+
+  async function resolveZone(text) {
+    const t = String(text || '').trim();
+    if (!t) return null;
+    let c = await cityCenter(t);
+    if (c) return c;
+    const first = t.split(/[\s,–-]+/).filter(Boolean)[0];
+    if (first && first.length > 2 && first.toLowerCase() !== t.toLowerCase()) c = await cityCenter(first);
+    return c;
   }
 
   async function geocodeNear(q, center, radiusKm) {
@@ -1744,6 +1758,7 @@ b,strong{font-weight:700}
         short: street || a.freeformAddress || '',
         lat: pos.lat, lng: pos.lon,
         num: a.streetNumber || '',
+        city: a.municipality || a.municipalitySubdivision || '',
         type: r.type || '',
         src: 'tomtom'
       };
@@ -1763,7 +1778,7 @@ b,strong{font-weight:700}
         (j || []).forEach((x) => {
           const a = x.address || {};
           const line = [a.road || a.pedestrian || a.footway, a.house_number].filter(Boolean).join(' ');
-          out.push({ label: x.display_name, short: line || x.name || x.display_name, lat: +x.lat, lng: +x.lon, num: a.house_number || '' });
+          out.push({ label: x.display_name, short: line || x.name || x.display_name, lat: +x.lat, lng: +x.lon, num: a.house_number || '', city: a.city || a.town || a.village || a.municipality || '' });
         });
       }
     } catch (e) { console.warn('nominatim', e); }
@@ -1778,7 +1793,7 @@ b,strong{font-weight:700}
             if (!c) return;
             const street = [p.street || p.name, p.housenumber].filter(Boolean).join(' ');
             const line = [street, p.city || p.town || p.village || p.district, p.postcode].filter(Boolean).join(', ');
-            out.push({ label: line || p.name, short: street || p.name || line, lat: c[1], lng: c[0], num: p.housenumber || '' });
+            out.push({ label: line || p.name, short: street || p.name || line, lat: c[1], lng: c[0], num: p.housenumber || '', city: p.city || p.town || p.village || '' });
           });
         }
       } catch (e) { console.warn('photon', e); }
@@ -2564,7 +2579,7 @@ b,strong{font-weight:700}
       '<p class="hint" style="margin-top:-6px">Incolla dal Notepad o scegli il file. <b>Una riga = una tappa</b>. Una riga con “Giro …”, “Giorno …”, “Lunedì …” apre un nuovo giro. Esempio:<br><code>Giro 1 - Verona</code><br><code>Via Roma 1 - Rossi</code><br><code>Via Mazzini 10 (piano 3, citofono)</code></p>' +
       '<div class="field"><label>Elenco</label><textarea id="i-text" style="min-height:150px" placeholder="Giro 1 - Verona&#10;Via Roma 1 - Rossi&#10;Via Mazzini 10 (piano 3)&#10;&#10;Giro 2 - Vicenza&#10;..."></textarea>' +
       '<div class="chips" style="margin-top:8px"><button id="i-file">Scegli file .txt/.csv</button><button id="i-clear">Svuota</button></div></div>' +
-      '<div class="field"><label>Zona (città)</label><input id="i-zone" placeholder="es. Viareggio"><div class="hint">La ricerca degli indirizzi resta entro ~35 km da questa città. Se i giri hanno la città nel titolo (“Giro 1 - Viareggio”), viene usata quella.</div></div>' +
+      '<div class="field"><label>Zona (città)</label><input id="i-zone" placeholder="es. Viareggio"><div class="hint">La ricerca resta entro ~35 km da questa città. Se il giro si chiama come la città (“Viareggio” o “Viareggio Marco Polo”) viene usata quella; se si chiama “Giro 1”, scrivila qui.</div></div>' +
       '<div class="switch" style="border-bottom:0;padding-top:0"><div class="lbl">Cerca le coordinate<small>' + (tomtomReady() ? 'Con la chiave TomTom i civici sono più precisi.' : 'Senza chiave TomTom uso OpenStreetMap: più lento e con meno civici.') + '</small></div><button class="tgl ' + (tomtomReady() ? 'on' : '') + '" id="i-geo"></button></div>' +
       '<div id="i-preview" class="hint"></div>' +
       '<div class="btn-row"><button class="btn" id="i-cancel">Annulla</button><button class="btn primary" id="i-run">Importa</button></div>');
@@ -2625,7 +2640,12 @@ b,strong{font-weight:700}
     });
 
     const tasks = [];
-    created.forEach(({ ng, g }) => g.stops.forEach((s) => tasks.push({ ng: ng, s: s, city: (g.city || zoneName || '').trim() })));
+    created.forEach(({ ng, g }) => {
+      let zoneText = (g.city || '').trim();
+      if (!zoneText) zoneText = (zoneName || '').trim();
+      if (!zoneText && g.name && !GIRO_RE.test(g.name)) zoneText = g.name.trim();
+      g.stops.forEach((s) => tasks.push({ ng: ng, s: s, zoneText: zoneText, cityLabel: '', center: null }));
+    });
     const total = tasks.length;
     let done = 0;
     const bar = $('#i-bar'), status = $('#i-status');
@@ -2635,13 +2655,18 @@ b,strong{font-weight:700}
       if (status) status.textContent = 'Cerco gli indirizzi… ' + done + ' / ' + total;
     };
 
-    const centers = {};
     if (geoOn && total) {
-      const cities = Array.from(new Set(tasks.map((t) => t.city).filter(Boolean)));
-      for (const c of cities) {
-        if (status) status.textContent = 'Individuo la zona: ' + c + '…';
-        centers[c.toLowerCase()] = await cityCenter(c);
+      const zones = Array.from(new Set(tasks.map((t) => t.zoneText).filter(Boolean)));
+      const zoneInfo = {};
+      for (const z of zones) {
+        if (status) status.textContent = 'Individuo la zona: ' + z + '…';
+        zoneInfo[z.toLowerCase()] = await resolveZone(z);
       }
+      tasks.forEach((t) => {
+        const info = t.zoneText ? zoneInfo[t.zoneText.toLowerCase()] : null;
+        t.center = info || null;
+        t.cityLabel = info && info.city ? info.city : t.zoneText;
+      });
     }
 
     if (geoOn && total) {
@@ -2650,16 +2675,17 @@ b,strong{font-weight:700}
       const work = async () => {
         while (cursor < total) {
           const t = tasks[cursor++];
-          const center = t.city ? centers[t.city.toLowerCase()] : null;
-          const q = t.s.query + ((t.city && t.s.query.toLowerCase().indexOf(t.city.toLowerCase()) === -1) ? ', ' + t.city : '');
+          const q = t.s.query + ((t.cityLabel && t.s.query.toLowerCase().indexOf(t.cityLabel.toLowerCase()) === -1) ? ', ' + t.cityLabel : '');
           try {
-            const rs = await geocodeNear(q, center, 35);
+            const rs = await geocodeNear(q, t.center, 35);
             let best = null;
             if (rs && rs.length) {
-              best = rs[0];
-              if (center) {
-                best = rs.slice().sort((a, b) => hav(center, a) - hav(center, b))[0];
-                if (hav(center, best) > 45000) t.outside = true;
+              if (t.center) {
+                const sorted = rs.slice().sort((a, b) => hav(t.center, a) - hav(t.center, b));
+                if (hav(t.center, sorted[0]) <= 45000) best = sorted[0];
+                else t.outside = true;
+              } else {
+                best = rs[0];
               }
             }
             t.res = best;
