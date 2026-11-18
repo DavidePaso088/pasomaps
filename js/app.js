@@ -1177,7 +1177,10 @@
     if (cur) setTimeout(() => { cur.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 260);
   }
 
-  function renderStops() {
+  function renderStops(opts) {
+    opts = opts || {};
+    const body = $('#sheet-body');
+    const prevTop = body ? body.scrollTop : 0;
     const box = $('#stops-list');
     if (!S.giro) return;
     const sess = S.session || { done: {}, skipped: [] };
@@ -1239,7 +1242,13 @@
         retryBtn.style.display = 'none';
       }
     }
-    scrollToCurrent();
+    if (opts.scroll === 'bottom') {
+      setTimeout(() => { if (body) body.scrollTop = body.scrollHeight; }, 40);
+    } else if (opts.scroll === 'current') {
+      scrollToCurrent();
+    } else if (body) {
+      body.scrollTop = prevTop;
+    }
   }
 
   /* =============================== L. EDITOR TAPPA =============================== */
@@ -1653,7 +1662,8 @@
         st.name = name || address; st.address = address; st.lat = picked.lat; st.lng = picked.lng; st.notes = notes; st.pinned = !!draft.pinned; st.approx = !!draft.approx;
       }
       saveDB(); closeModal();
-      renderStops(); drawMarkers(); renderGiroChrome();
+      renderStops(isNew ? { scroll: 'bottom' } : {});
+      drawMarkers(); renderGiroChrome();
       computePreview(true);
       updateEta();
       toast(isNew ? 'Tappa aggiunta · salvata per le prossime volte' : 'Tappa aggiornata', 'good');

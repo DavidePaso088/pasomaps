@@ -1,6 +1,15 @@
 {
   "builds": [
     {
+      "build": 44,
+      "date": "2026-11-18",
+      "changes": [
+        "La lista delle tappe resta ferma dove sei quando modifichi, sposti o salti una tappa",
+        "Dopo aver aggiunto una tappa la lista scende in fondo per mostrarla",
+        "Le frecce ↑ ↓ non fanno più saltare la lista all'inizio"
+      ]
+    },
+    {
       "build": 43,
       "date": "2026-11-18",
       "changes": [
