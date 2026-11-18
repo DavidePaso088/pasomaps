@@ -271,6 +271,13 @@ b,strong{font-weight:700}
 .stop-item.done{opacity:.6}
 .stop-item.skipped{opacity:.5}
 .stop-item.skipped .stop-name{text-decoration:line-through}
+.stop-item{user-select:none;-webkit-user-select:none}
+.stop-item.dragging{
+  opacity:.95;background:#132a44;border-color:rgba(59,130,246,.8);
+  box-shadow:0 14px 30px rgba(0,0,0,.55);transform:scale(1.01);
+  position:relative;z-index:5;
+}
+.sheet-tip{font-size:10.5px;color:#7c8ea9;padding:0 16px 7px;letter-spacing:.2px}
 .stop-idx{
   width:27px;height:27px;border-radius:9px;flex:0 0 auto;display:grid;place-items:center;
   font-size:12.5px;font-weight:700;background:rgba(255,255,255,.07);color:#c7d8ef;border:1px solid var(--line)

@@ -1525,6 +1525,7 @@
       '<button class="btn" id="m-cancel">Annulla</button>' +
       '<button class="btn primary" id="f-save">Salva</button>' +
       '</div>' +
+      (!isNew ? '<div class="btn-row" style="margin-top:9px"><button class="btn" id="f-up">↑ Sposta su</button><button class="btn" id="f-down">↓ Sposta giù</button></div>' : '') +
       (!isNew && stopIndexLabel(st.id) !== 1 ? '<button class="btn-ghost" id="f-first">↑ Rendi prossima tappa</button>' : '');
 
     openModal(html);
@@ -1626,6 +1627,19 @@
       S.session.skipped = S.session.skipped.filter((id) => id !== st.id);
       saveDB(); closeModal(); renderStops(); drawMarkers(); computePreview(true); toast('Ora è la prossima tappa', 'good');
     });
+    const moveStop = (dir) => {
+      const arr = S.giro.stops;
+      const i = arr.findIndex((x) => x.id === st.id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= arr.length) { toast(dir < 0 ? 'È già la prima tappa' : 'È già l’ultima tappa', 'bad'); return; }
+      const [it] = arr.splice(i, 1);
+      arr.splice(j, 0, it);
+      saveDB(); closeModal(); renderStops(); drawMarkers(); computePreview(false); updateEta();
+      toast('Tappa spostata', 'good');
+      vibrate(15);
+    };
+    if ($('#f-up')) $('#f-up').addEventListener('click', () => moveStop(-1));
+    if ($('#f-down')) $('#f-down').addEventListener('click', () => moveStop(1));
 
     $('#f-save').addEventListener('click', async () => {
       const name = $('#f-name').value.trim();
@@ -2578,7 +2592,78 @@
 
 
 
-  function skipCurrentNav() {
+    function commitStopOrder() {
+      const ids = Array.from(document.querySelectorAll('#stops-list .stop-item')).map((x) => x.getAttribute('data-id'));
+      const map = {};
+      S.giro.stops.forEach((s) => { map[s.id] = s; });
+      const next = ids.map((id) => map[id]).filter(Boolean);
+      S.giro.stops.forEach((s) => { if (next.indexOf(s) === -1) next.push(s); });
+      S.giro.stops = next;
+      saveDB();
+      renderStops();
+      drawMarkers(); renderGiroChrome(); updateEta(); computePreview(false);
+      if (Nav.active) { Nav.route = null; Nav.spoken = {}; Nav.lastAlong = null; refreshNavRoute(); }
+      toast('Ordine aggiornato', 'good');
+    }
+
+    function attachStopDrag() {
+      const list = $('#stops-list');
+      if (!list || list.__dragBound) return;
+      list.__dragBound = true;
+      let st = null;
+      const clearTimer = () => { if (st && st.timer) { clearTimeout(st.timer); st.timer = 0; } };
+      const blockScroll = (e) => { if (st && st.dragging) e.preventDefault(); };
+      const finish = () => {
+        if (!st) return;
+        clearTimer();
+        document.removeEventListener('touchmove', blockScroll);
+        if (st.dragging) { st.item.classList.remove('dragging'); commitStopOrder(); }
+        st = null;
+      };
+      const begin = () => {
+        if (!st) return;
+        st.dragging = true;
+        st.item.classList.add('dragging');
+        document.addEventListener('touchmove', blockScroll, { passive: false });
+        try { if (navigator.vibrate) navigator.vibrate(18); } catch (e) { }
+        if (!S.__dragHint) { S.__dragHint = true; toast('Sposta la tappa dove vuoi, poi rilascia', 'good'); }
+      };
+      const onDown = (e) => {
+        const item = e.target.closest ? e.target.closest('.stop-item') : null;
+        if (!item || (e.target.closest && e.target.closest('button'))) return;
+        if (e.touches && e.touches.length > 1) return;
+        const y = e.clientY;
+        st = { item: item, startY: y, dragging: false, timer: setTimeout(begin, 450) };
+      };
+      const onMove = (e) => {
+        if (!st) return;
+        const y = e.clientY;
+        if (!st.dragging) {
+          if (Math.abs(y - st.startY) > 10) { clearTimer(); st = null; }
+          return;
+        }
+        if (e.cancelable) e.preventDefault();
+        const el = document.elementFromPoint(e.clientX, y);
+        const over = el && el.closest ? el.closest('.stop-item') : null;
+        if (over && over !== st.item) {
+          const r = over.getBoundingClientRect();
+          const before = y < r.top + r.height / 2;
+          over.parentNode.insertBefore(st.item, before ? over : over.nextSibling);
+        }
+        const body = $('#sheet-body');
+        if (body) {
+          const br = body.getBoundingClientRect();
+          if (y < br.top + 70) body.scrollTop -= 8;
+          else if (y > br.bottom - 70) body.scrollTop += 8;
+        }
+      };
+      list.addEventListener('pointerdown', onDown);
+      document.addEventListener('pointermove', onMove, { passive: false });
+      document.addEventListener('pointerup', finish);
+      document.addEventListener('pointercancel', finish);
+    }
+
+    async function skipCurrentNav() {
     const act = activeStops();
     if (!act.length) { toast('Nessuna tappa da saltare', 'bad'); return; }
     const st = act[0];
@@ -2762,6 +2847,7 @@
         if (st && isFinite(st.lat)) { closeSheet(); map.easeTo({ center: [st.lng, st.lat], zoom: 16, duration: 500 }); }
       }
     });
+    attachStopDrag();
     $('#stops-list').addEventListener('dblclick', (e) => {
       const item = e.target.closest('.stop-item');
       if (item) markDoneManual(item.getAttribute('data-id'));
