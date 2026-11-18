@@ -196,6 +196,13 @@ b,strong{font-weight:700}
   background:rgba(59,130,246,.18);border:1px solid rgba(59,130,246,.45);color:#bfe0ff;font-size:17px;
 }
 .nb-refresh:active{transform:scale(.94)}
+.nav-skip{
+  height:40px;padding:0 12px;border-radius:11px;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(245,158,11,.20);border:1px solid rgba(245,158,11,.55);
+  color:#ffd9a8;font-size:12.5px;font-weight:700;letter-spacing:.2px;white-space:nowrap;
+}
+.nav-skip:active{transform:scale(.95);background:rgba(245,158,11,.32)}
 
 /* pannello inferiore ~22% */
 .bottom-panel{
@@ -434,6 +441,7 @@ b,strong{font-weight:700}
     <div class="nav-banner" id="nav-banner">
       <div class="arrow" id="nb-arrow">↱</div>
       <div class="txt"><b id="nb-title">—</b><span id="nb-sub">—</span></div>
+      <button class="nav-skip" id="nav-skip" aria-label="Salta questa tappa" title="Salta questa tappa">⤼ Salta</button>
       <button class="nb-refresh" id="nb-refresh" aria-label="Ricalcola percorso" title="Ricalcola percorso">↻</button>
     </div>
     <div class="map-hint" id="route-state">Calcolo percorso…</div>
@@ -3072,6 +3080,37 @@ b,strong{font-weight:700}
 
 
 
+  function skipCurrentNav() {
+    const act = activeStops();
+    if (!act.length) { toast('Nessuna tappa da saltare', 'bad'); return; }
+    const st = act[0];
+    if (S.session.skipped.indexOf(st.id) === -1) S.session.skipped.push(st.id);
+    saveDB();
+    renderStops(); drawMarkers(); renderGiroChrome();
+    const next = activeStops()[0];
+    const name = st.name || st.address || 'tappa';
+    if (!next) {
+      stopNav();
+      updateEta();
+      computePreview(true);
+      toast('Saltata: ' + name + ' · giro completato', 'good');
+      vibrate(20);
+      return;
+    }
+    if (Nav.active) {
+      Nav.route = null; Nav.spoken = {}; Nav.lastAlong = null;
+      updateEta();
+      computePreview(false);
+      refreshNavRoute();
+      toast('Saltata: ' + name + ' · prossima: ' + (next.name || next.address), 'good');
+    } else {
+      updateEta();
+      computePreview(true);
+      toast('Saltata: ' + name, 'good');
+    }
+    vibrate(20);
+  }
+
   function toggleSkip(id) {
     if (!S.session) return;
     const i = S.session.skipped.indexOf(id);
@@ -3189,6 +3228,7 @@ b,strong{font-weight:700}
       toast('Ricalcolo percorso…');
       refreshNavRoute();
     });
+    $('#nav-skip').addEventListener('click', skipCurrentNav);
     $('#btn-nav').addEventListener('click', () => {
       if (Nav.active) { stopNav(); toast('Navigazione fermata'); return; }
       openNavMenu(activeStops()[0]);

@@ -2578,6 +2578,37 @@
 
 
 
+  function skipCurrentNav() {
+    const act = activeStops();
+    if (!act.length) { toast('Nessuna tappa da saltare', 'bad'); return; }
+    const st = act[0];
+    if (S.session.skipped.indexOf(st.id) === -1) S.session.skipped.push(st.id);
+    saveDB();
+    renderStops(); drawMarkers(); renderGiroChrome();
+    const next = activeStops()[0];
+    const name = st.name || st.address || 'tappa';
+    if (!next) {
+      stopNav();
+      updateEta();
+      computePreview(true);
+      toast('Saltata: ' + name + ' · giro completato', 'good');
+      vibrate(20);
+      return;
+    }
+    if (Nav.active) {
+      Nav.route = null; Nav.spoken = {}; Nav.lastAlong = null;
+      updateEta();
+      computePreview(false);
+      refreshNavRoute();
+      toast('Saltata: ' + name + ' · prossima: ' + (next.name || next.address), 'good');
+    } else {
+      updateEta();
+      computePreview(true);
+      toast('Saltata: ' + name, 'good');
+    }
+    vibrate(20);
+  }
+
   function toggleSkip(id) {
     if (!S.session) return;
     const i = S.session.skipped.indexOf(id);
@@ -2695,6 +2726,7 @@
       toast('Ricalcolo percorso…');
       refreshNavRoute();
     });
+    $('#nav-skip').addEventListener('click', skipCurrentNav);
     $('#btn-nav').addEventListener('click', () => {
       if (Nav.active) { stopNav(); toast('Navigazione fermata'); return; }
       openNavMenu(activeStops()[0]);
