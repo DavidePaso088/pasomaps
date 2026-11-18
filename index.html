@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css">
-<link rel="stylesheet" href="css/app.css?v=42">
+<link rel="stylesheet" href="css/app.css?v=43">
 </head>
 <body>
 
@@ -85,7 +85,7 @@
       <button class="chip" id="btn-close-sheet" aria-label="Chiudi">✕</button>
     </div>
   </div>
-  <div class="sheet-tip">Tieni premuto su una tappa per spostarla · oppure apri ✎ e usa ↑ ↓</div>
+  <div class="sheet-tip">Tieni premuto su una tappa per spostarla · oppure usa le frecce ↑ ↓</div>
   <div class="sheet-body" id="sheet-body">
     <div class="stops" id="stops-list"></div>
     <div class="sheet-foot">
@@ -110,9 +110,9 @@
 </div></div>
 
 <div id="toasts"></div>
-<div id="update-bar" hidden>Nuova versione pronta — tocca per aggiornare</div>
+<div id="update-bar" hidden><div class="ub-title">Nuova versione pronta — tocca per aggiornare</div></div>
 
 <script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
-<script src="js/app.js?v=42"></script>
+<script src="js/app.js?v=43"></script>
 </body>
 </html>

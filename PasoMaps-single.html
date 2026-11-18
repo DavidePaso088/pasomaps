@@ -302,6 +302,16 @@ b,strong{font-weight:700}
 .stop-addr{font-size:11.5px;color:var(--muted);margin-top:2px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .stop-note{font-size:11.5px;color:#9fd6ff;margin-top:4px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .stop-meta{font-size:11px;color:#7e91ad;margin-top:5px;display:flex;gap:8px;align-items:center}
+.stop-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:5px}
+.stop-foot .stop-meta{margin-top:0}
+.mv-group{display:flex;gap:5px;flex:0 0 auto}
+.mv{
+  width:34px;height:30px;border-radius:8px;display:grid;place-items:center;
+  font-size:14px;font-weight:700;line-height:1;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#bcd2ee;
+}
+.mv:active{transform:scale(.93);background:rgba(59,130,246,.2);border-color:rgba(59,130,246,.45)}
+.mv[disabled]{opacity:.28;pointer-events:none}
 .stop-acts{display:flex;flex-direction:column;gap:5px;flex:0 0 auto}
 .sa{
   width:33px;height:31px;border-radius:9px;display:grid;place-items:center;font-size:13px;
@@ -372,6 +382,11 @@ b,strong{font-weight:700}
   background:linear-gradient(90deg,#1d4ed8,#2563eb);color:#fff;font-size:12.5px;font-weight:600;
   text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.4);cursor:pointer;
 }
+.ub-title{font-size:12.5px;font-weight:600;text-align:center}
+.ub-list{margin:5px 0 0;padding-left:18px;font-size:11px;font-weight:400;line-height:1.45;text-align:left;color:#e6f0ff}
+.ub-list li{margin:1px 0}
+.news-list{margin:6px 0 0;padding-left:18px;color:#cfe0f7;font-size:13px;line-height:1.5}
+.news-list li{margin:3px 0}
 .toast{
   max-width:min(92%,420px);padding:11px 15px;border-radius:14px;font-size:12.5px;line-height:1.4;
   background:rgba(16,26,44,.97);border:1px solid rgba(96,165,250,.35);color:#e6f0ff;
@@ -479,7 +494,7 @@ b,strong{font-weight:700}
       <button class="chip" id="btn-close-sheet" aria-label="Chiudi">✕</button>
     </div>
   </div>
-  <div class="sheet-tip">Tieni premuto su una tappa per spostarla · oppure apri ✎ e usa ↑ ↓</div>
+  <div class="sheet-tip">Tieni premuto su una tappa per spostarla · oppure usa le frecce ↑ ↓</div>
   <div class="sheet-body" id="sheet-body">
     <div class="stops" id="stops-list"></div>
     <div class="sheet-foot">
@@ -504,7 +519,7 @@ b,strong{font-weight:700}
 </div></div>
 
 <div id="toasts"></div>
-<div id="update-bar" hidden>Nuova versione pronta — tocca per aggiornare</div>
+<div id="update-bar" hidden><div class="ub-title">Nuova versione pronta — tocca per aggiornare</div></div>
 
 <script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
 <script>
@@ -1712,6 +1727,7 @@ b,strong{font-weight:700}
       } else if (!hasCoords(st)) {
         meta = '<div class="stop-meta" style="color:#ffc98b"><span>posizione mancante</span></div>';
       }
+      const total = S.giro.stops.length;
       return '<div class="stop-item' + (cur ? ' cur' : '') + (done ? ' done' : '') + (skipped ? ' skipped' : '') + '" data-id="' + st.id + '">' +
         '<div class="stop-idx">' + (done ? '✓' : skipped ? '–' : idx) + '</div>' +
         '<div class="stop-main" data-center="' + st.id + '">' +
@@ -1719,7 +1735,13 @@ b,strong{font-weight:700}
         '<div class="stop-addr">' + esc(st.address || '') + '</div>' +
         (st.approx ? '<div class="stop-note" style="color:#ffc98b">civico approssimato · verifica il pin</div>' : '') +
         (st.notes ? '<div class="stop-note">' + esc(st.notes) + '</div>' : '') +
+        '<div class="stop-foot">' +
+        '<div class="mv-group">' +
+        '<button class="mv" data-act="up" data-id="' + st.id + '" aria-label="Sposta su"' + (idx <= 1 ? ' disabled' : '') + '>↑</button>' +
+        '<button class="mv" data-act="down" data-id="' + st.id + '" aria-label="Sposta giù"' + (idx >= total ? ' disabled' : '') + '>↓</button>' +
+        '</div>' +
         meta +
+        '</div>' +
         '</div>' +
         '<div class="stop-acts">' +
         '<button class="sa go" data-act="nav" data-id="' + st.id + '" title="Naviga">➤</button>' +
@@ -2035,7 +2057,6 @@ b,strong{font-weight:700}
       '<button class="btn" id="m-cancel">Annulla</button>' +
       '<button class="btn primary" id="f-save">Salva</button>' +
       '</div>' +
-      (!isNew ? '<div class="btn-row" style="margin-top:9px"><button class="btn" id="f-up">↑ Sposta su</button><button class="btn" id="f-down">↓ Sposta giù</button></div>' : '') +
       (!isNew && stopIndexLabel(st.id) !== 1 ? '<button class="btn-ghost" id="f-first">↑ Rendi prossima tappa</button>' : '');
 
     openModal(html);
@@ -2137,20 +2158,6 @@ b,strong{font-weight:700}
       S.session.skipped = S.session.skipped.filter((id) => id !== st.id);
       saveDB(); closeModal(); renderStops(); drawMarkers(); computePreview(true); toast('Ora è la prossima tappa', 'good');
     });
-    const moveStop = (dir) => {
-      const arr = S.giro.stops;
-      const i = arr.findIndex((x) => x.id === st.id);
-      const j = i + dir;
-      if (i < 0 || j < 0 || j >= arr.length) { toast(dir < 0 ? 'È già la prima tappa' : 'È già l’ultima tappa', 'bad'); return; }
-      const [it] = arr.splice(i, 1);
-      arr.splice(j, 0, it);
-      saveDB(); closeModal(); renderStops(); drawMarkers(); computePreview(false); updateEta();
-      toast('Tappa spostata', 'good');
-      vibrate(15);
-    };
-    if ($('#f-up')) $('#f-up').addEventListener('click', () => moveStop(-1));
-    if ($('#f-down')) $('#f-down').addEventListener('click', () => moveStop(1));
-
     $('#f-save').addEventListener('click', async () => {
       const name = $('#f-name').value.trim();
       const address = $('#f-addr').value.trim();
@@ -3116,6 +3123,22 @@ b,strong{font-weight:700}
       toast('Ordine aggiornato', 'good');
     }
 
+    function moveStopBy(id, dir) {
+      if (!S.giro) return;
+      const arr = S.giro.stops;
+      const i = arr.findIndex((s) => s.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= arr.length) return;
+      const [it] = arr.splice(i, 1);
+      arr.splice(j, 0, it);
+      saveDB();
+      renderStops();
+      drawMarkers(); updateEta(); computePreview(false);
+      if (Nav.active) { Nav.route = null; Nav.spoken = {}; Nav.lastAlong = null; refreshNavRoute(); }
+      toast('Tappa spostata', 'good');
+      vibrate(12);
+    }
+
     function attachStopDrag() {
       const list = $('#stops-list');
       if (!list || list.__dragBound) return;
@@ -3278,6 +3301,55 @@ b,strong{font-weight:700}
     document.documentElement.style.setProperty('--map-filter', 'brightness(' + db.settings.brightness + ') contrast(1.02)');
   }
 
+  /* ---------- changelog: cosa è cambiato negli aggiornamenti ---------- */
+  function buildNumber() {
+    const m = String(APP_BUILD).match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : 0;
+  }
+
+  async function fetchChangelog() {
+    try {
+      const res = await fetch('changelog.json?ts=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (e) { return null; }
+  }
+
+  async function showUpdateBar() {
+    const bar = $('#update-bar');
+    if (!bar) return;
+    bar.hidden = false;
+    const cur = buildNumber();
+    const j = await fetchChangelog();
+    if (!j || !Array.isArray(j.builds)) return;
+    const newer = j.builds.filter((b) => b.build > cur).sort((a, b) => b.build - a.build);
+    if (!newer.length) return;
+    const top = newer[0];
+    if (Array.isArray(top.changes) && top.changes.length) {
+      bar.innerHTML = '<div class="ub-title">Aggiornamento alla build ' + top.build + ' — tocca per aggiornare</div>' +
+        '<ul class="ub-list">' + top.changes.map((c) => '<li>' + esc(c) + '</li>').join('') + '</ul>';
+    }
+  }
+
+  async function showWhatsNew() {
+    const cur = buildNumber();
+    if (!cur) return;
+    let seen = 0;
+    try { seen = parseInt(localStorage.getItem('pasomaps.seenBuild') || '0', 10) || 0; } catch (e) { }
+    try { localStorage.setItem('pasomaps.seenBuild', String(cur)); } catch (e) { }
+    if (seen >= cur) return;
+    if (!seen && !(db.giri && db.giri.length)) return;
+    const j = await fetchChangelog();
+    if (!j || !Array.isArray(j.builds)) return;
+    const entry = j.builds.find((b) => b.build === cur);
+    if (!entry || !Array.isArray(entry.changes) || !entry.changes.length) return;
+    openModal('<div class="modal-head"><b>Cosa è cambiato · build ' + cur + '</b><button class="x" id="n-close">✕</button></div>' +
+      '<ul class="news-list">' + entry.changes.map((c) => '<li>' + esc(c) + '</li>').join('') + '</ul>' +
+      '<button class="btn primary" id="n-ok" style="width:100%;margin-top:14px">OK</button>');
+    if ($('#n-close')) $('#n-close').addEventListener('click', closeModal);
+    if ($('#n-ok')) $('#n-ok').addEventListener('click', closeModal);
+  }
+
   /* =============================== P. EVENTI =============================== */
   function bind() {
     $('#btn-settings').addEventListener('click', openSettings);
@@ -3350,6 +3422,8 @@ b,strong{font-weight:700}
         if (act === 'nav') { openNavMenu(st); }
         if (act === 'skip') { toggleSkip(id); }
         if (act === 'edit') { openStopEditor(id, {}); }
+        if (act === 'up') { moveStopBy(id, -1); }
+        if (act === 'down') { moveStopBy(id, 1); }
         return;
       }
       if (center) {
@@ -3393,14 +3467,14 @@ b,strong{font-weight:700}
     }
 
     setTimeout(() => $('#boot').classList.add('hide'), 420);
+    setTimeout(showWhatsNew, 900);
 
     // service worker (solo se servito da http/https)
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
       const hadController = !!navigator.serviceWorker.controller;
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (!hadController) return;
-        const bar = $('#update-bar');
-        if (bar) bar.hidden = false;
+        showUpdateBar();
       });
       navigator.serviceWorker.register('sw.js').catch(() => { });
     }

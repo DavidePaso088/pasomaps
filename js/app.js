@@ -1202,6 +1202,7 @@
       } else if (!hasCoords(st)) {
         meta = '<div class="stop-meta" style="color:#ffc98b"><span>posizione mancante</span></div>';
       }
+      const total = S.giro.stops.length;
       return '<div class="stop-item' + (cur ? ' cur' : '') + (done ? ' done' : '') + (skipped ? ' skipped' : '') + '" data-id="' + st.id + '">' +
         '<div class="stop-idx">' + (done ? '✓' : skipped ? '–' : idx) + '</div>' +
         '<div class="stop-main" data-center="' + st.id + '">' +
@@ -1209,7 +1210,13 @@
         '<div class="stop-addr">' + esc(st.address || '') + '</div>' +
         (st.approx ? '<div class="stop-note" style="color:#ffc98b">civico approssimato · verifica il pin</div>' : '') +
         (st.notes ? '<div class="stop-note">' + esc(st.notes) + '</div>' : '') +
+        '<div class="stop-foot">' +
+        '<div class="mv-group">' +
+        '<button class="mv" data-act="up" data-id="' + st.id + '" aria-label="Sposta su"' + (idx <= 1 ? ' disabled' : '') + '>↑</button>' +
+        '<button class="mv" data-act="down" data-id="' + st.id + '" aria-label="Sposta giù"' + (idx >= total ? ' disabled' : '') + '>↓</button>' +
+        '</div>' +
         meta +
+        '</div>' +
         '</div>' +
         '<div class="stop-acts">' +
         '<button class="sa go" data-act="nav" data-id="' + st.id + '" title="Naviga">➤</button>' +
@@ -1525,7 +1532,6 @@
       '<button class="btn" id="m-cancel">Annulla</button>' +
       '<button class="btn primary" id="f-save">Salva</button>' +
       '</div>' +
-      (!isNew ? '<div class="btn-row" style="margin-top:9px"><button class="btn" id="f-up">↑ Sposta su</button><button class="btn" id="f-down">↓ Sposta giù</button></div>' : '') +
       (!isNew && stopIndexLabel(st.id) !== 1 ? '<button class="btn-ghost" id="f-first">↑ Rendi prossima tappa</button>' : '');
 
     openModal(html);
@@ -1627,20 +1633,6 @@
       S.session.skipped = S.session.skipped.filter((id) => id !== st.id);
       saveDB(); closeModal(); renderStops(); drawMarkers(); computePreview(true); toast('Ora è la prossima tappa', 'good');
     });
-    const moveStop = (dir) => {
-      const arr = S.giro.stops;
-      const i = arr.findIndex((x) => x.id === st.id);
-      const j = i + dir;
-      if (i < 0 || j < 0 || j >= arr.length) { toast(dir < 0 ? 'È già la prima tappa' : 'È già l’ultima tappa', 'bad'); return; }
-      const [it] = arr.splice(i, 1);
-      arr.splice(j, 0, it);
-      saveDB(); closeModal(); renderStops(); drawMarkers(); computePreview(false); updateEta();
-      toast('Tappa spostata', 'good');
-      vibrate(15);
-    };
-    if ($('#f-up')) $('#f-up').addEventListener('click', () => moveStop(-1));
-    if ($('#f-down')) $('#f-down').addEventListener('click', () => moveStop(1));
-
     $('#f-save').addEventListener('click', async () => {
       const name = $('#f-name').value.trim();
       const address = $('#f-addr').value.trim();
@@ -2606,6 +2598,22 @@
       toast('Ordine aggiornato', 'good');
     }
 
+    function moveStopBy(id, dir) {
+      if (!S.giro) return;
+      const arr = S.giro.stops;
+      const i = arr.findIndex((s) => s.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= arr.length) return;
+      const [it] = arr.splice(i, 1);
+      arr.splice(j, 0, it);
+      saveDB();
+      renderStops();
+      drawMarkers(); updateEta(); computePreview(false);
+      if (Nav.active) { Nav.route = null; Nav.spoken = {}; Nav.lastAlong = null; refreshNavRoute(); }
+      toast('Tappa spostata', 'good');
+      vibrate(12);
+    }
+
     function attachStopDrag() {
       const list = $('#stops-list');
       if (!list || list.__dragBound) return;
@@ -2768,6 +2776,55 @@
     document.documentElement.style.setProperty('--map-filter', 'brightness(' + db.settings.brightness + ') contrast(1.02)');
   }
 
+  /* ---------- changelog: cosa è cambiato negli aggiornamenti ---------- */
+  function buildNumber() {
+    const m = String(APP_BUILD).match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : 0;
+  }
+
+  async function fetchChangelog() {
+    try {
+      const res = await fetch('changelog.json?ts=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (e) { return null; }
+  }
+
+  async function showUpdateBar() {
+    const bar = $('#update-bar');
+    if (!bar) return;
+    bar.hidden = false;
+    const cur = buildNumber();
+    const j = await fetchChangelog();
+    if (!j || !Array.isArray(j.builds)) return;
+    const newer = j.builds.filter((b) => b.build > cur).sort((a, b) => b.build - a.build);
+    if (!newer.length) return;
+    const top = newer[0];
+    if (Array.isArray(top.changes) && top.changes.length) {
+      bar.innerHTML = '<div class="ub-title">Aggiornamento alla build ' + top.build + ' — tocca per aggiornare</div>' +
+        '<ul class="ub-list">' + top.changes.map((c) => '<li>' + esc(c) + '</li>').join('') + '</ul>';
+    }
+  }
+
+  async function showWhatsNew() {
+    const cur = buildNumber();
+    if (!cur) return;
+    let seen = 0;
+    try { seen = parseInt(localStorage.getItem('pasomaps.seenBuild') || '0', 10) || 0; } catch (e) { }
+    try { localStorage.setItem('pasomaps.seenBuild', String(cur)); } catch (e) { }
+    if (seen >= cur) return;
+    if (!seen && !(db.giri && db.giri.length)) return;
+    const j = await fetchChangelog();
+    if (!j || !Array.isArray(j.builds)) return;
+    const entry = j.builds.find((b) => b.build === cur);
+    if (!entry || !Array.isArray(entry.changes) || !entry.changes.length) return;
+    openModal('<div class="modal-head"><b>Cosa è cambiato · build ' + cur + '</b><button class="x" id="n-close">✕</button></div>' +
+      '<ul class="news-list">' + entry.changes.map((c) => '<li>' + esc(c) + '</li>').join('') + '</ul>' +
+      '<button class="btn primary" id="n-ok" style="width:100%;margin-top:14px">OK</button>');
+    if ($('#n-close')) $('#n-close').addEventListener('click', closeModal);
+    if ($('#n-ok')) $('#n-ok').addEventListener('click', closeModal);
+  }
+
   /* =============================== P. EVENTI =============================== */
   function bind() {
     $('#btn-settings').addEventListener('click', openSettings);
@@ -2840,6 +2897,8 @@
         if (act === 'nav') { openNavMenu(st); }
         if (act === 'skip') { toggleSkip(id); }
         if (act === 'edit') { openStopEditor(id, {}); }
+        if (act === 'up') { moveStopBy(id, -1); }
+        if (act === 'down') { moveStopBy(id, 1); }
         return;
       }
       if (center) {
@@ -2883,14 +2942,14 @@
     }
 
     setTimeout(() => $('#boot').classList.add('hide'), 420);
+    setTimeout(showWhatsNew, 900);
 
     // service worker (solo se servito da http/https)
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
       const hadController = !!navigator.serviceWorker.controller;
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (!hadController) return;
-        const bar = $('#update-bar');
-        if (bar) bar.hidden = false;
+        showUpdateBar();
       });
       navigator.serviceWorker.register('sw.js').catch(() => { });
     }

@@ -1,0 +1,74 @@
+{
+  "builds": [
+    {
+      "build": 43,
+      "date": "2026-11-18",
+      "changes": [
+        "Frecce ↑ ↓ su ogni tappa, in basso a sinistra, per spostarla subito",
+        "Trascinamento con pressione lunga per riordinare le tappe",
+        "La finestrella di aggiornamento mostra le novità",
+        "Riepilogo \"cosa è cambiato\" al primo avvio dopo l'aggiornamento"
+      ]
+    },
+    {
+      "build": 42,
+      "date": "2026-11-18",
+      "changes": [
+        "Riordino delle tappe con trascinamento (pressione lunga)",
+        "Frecce ↑ ↓ nella scheda della tappa"
+      ]
+    },
+    {
+      "build": 41,
+      "date": "2026-11-18",
+      "changes": [
+        "Tasto \"⤼ Salta\" grande nel banner di navigazione",
+        "Ricalcolo automatico verso la tappa successiva dopo il salto"
+      ]
+    },
+    {
+      "build": 40,
+      "date": "2026-11-16",
+      "changes": [
+        "Badge GPS quando la posizione è vecchia o imprecisa",
+        "Avviso ZTL/divieti locali all'avvio della navigazione",
+        "Stile mappa liberty con edifici 3D",
+        "Promemoria backup nelle impostazioni",
+        "Apertura OsmAnd dal menu di navigazione"
+      ]
+    },
+    {
+      "build": 39,
+      "date": "2026-11-18",
+      "changes": [
+        "Civici con lettera (3B, 3/B, 3 bis) cercati con varianti automatiche",
+        "Avviso \"civico approssimato\" quando il numero non è nei dati"
+      ]
+    },
+    {
+      "build": 38,
+      "date": "2026-11-15",
+      "changes": [
+        "Importazione elenco da Notepad/CSV con zona geografica",
+        "Ricerca indirizzi limitata alla zona del giro",
+        "Ricalcolo posizioni delle tappe già importate"
+      ]
+    },
+    {
+      "build": 36,
+      "date": "2026-11-15",
+      "changes": [
+        "Numero di build visibile in home",
+        "Barra \"nuova versione pronta\"",
+        "Tasto per forzare l'aggiornamento dell'app"
+      ]
+    },
+    {
+      "build": 35,
+      "date": "2026-11-15",
+      "changes": [
+        "Prepara offline: scarica i tile della zona del giro (z10-14)"
+      ]
+    }
+  ]
+}
