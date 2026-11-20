@@ -187,12 +187,12 @@
     return map[type] || '↑';
   }
 
-  function truckOptions() {
+  function truckOptions(allowHighways) {
     const t = db.truck;
     return {
       height: +t.height || 3.2, width: +t.width || 2.2, length: +t.length || 6,
       weight: +t.weight || 35, axle_load: +t.axle_load || 11,
-      use_highways: 0.0
+      use_highways: allowHighways ? 1.0 : 0.0
     };
   }
 
@@ -221,7 +221,7 @@
     p.set('key', tomtomKey());
     p.set('travelMode', 'truck');
     p.set('traffic', 'true');
-    p.append('avoid', 'motorways');
+    if (!opts.allowHighways) p.append('avoid', 'motorways');
     p.set('routeType', opts.shortest ? 'shortest' : 'fastest');
     p.set('vehicleHeight', String(+t.height || 2.8));
     p.set('vehicleWidth', String(+t.width || 2.1));
@@ -342,7 +342,7 @@
     const body = {
       locations: points.map((p) => ({ lat: +p.lat, lon: +p.lng, type: 'break' })),
       costing: 'truck',
-      costing_options: { truck: truckOptions() },
+      costing_options: { truck: truckOptions(opts.allowHighways) },
       units: 'kilometers',
       language: 'it-IT',
       directions_options: { units: 'kilometers', language: { text_locale: 'it-IT' } }
@@ -419,7 +419,7 @@
     const maxLoc = tomtomReady() ? 100 : MAX_LOCATIONS;
     if (points.length <= maxLoc) {
       let r = await requestRoute(points, opts);
-      let bad = r.highway || r.legs.some(legTouchesMotorway);
+      let bad = !opts.allowHighways && (r.highway || r.legs.some(legTouchesMotorway));
       if (bad && !opts.shortest) {
         // secondo tentativo: percorso più corto (tende a stare sulle statali)
         try {
@@ -591,6 +591,7 @@
     giro: null,
     session: null,
     preview: null,
+    allowHighways: false,
     shownRoute: null,
     previewFromMe: false,
     previewAlt: null,
@@ -625,6 +626,7 @@
   function goHome() {
     if (Nav.active) stopNav(true);
     closeSheet(false);
+    S.allowHighways = false;
     flushDB();
     showScreen('home');
     renderHome();
@@ -635,7 +637,6 @@
 
   function renderHome() {
     const box = $('#giri-list');
-    $('#btn-cycle').hidden = false;
     if (!db.giri.length) {
       box.innerHTML = '<div class="empty">Non hai ancora nessun giro.<br><br>Tocca <b>+ Nuovo giro</b>, dagli un nome (es. “Lunedì 1ª settimana”), indica la zona e aggiungi le tappe.<br><br>Ogni giro resta salvato e lo ritrovi uguale tra due settimane.</div>';
       return;
@@ -683,10 +684,57 @@
   }
 
   /* =============================== H. APRI GIRO =============================== */
+  function openFreeMode() {
+    openModal('' +
+      '<div class="modal-head"><b>Modalità libera</b><button class="x" id="fm-close">✕</button></div>' +
+      '<p class="hint" style="margin-top:-6px">Navigatore normale: <b>le autostrade sono permesse</b>. Scrivi la destinazione e tocca il risultato.</p>' +
+      '<div class="field"><label>Dove vai?</label>' +
+      '<div class="row"><input id="fm-q" placeholder="Via, numero, città" autocomplete="off" spellcheck="false"><button class="btn" id="fm-search" style="flex:0 0 auto;padding:12px 14px">Cerca</button></div>' +
+      '<div class="results" id="fm-res"></div></div>');
+    const box = $('#fm-res');
+    const doSearch = async () => {
+      const q = $('#fm-q').value.trim();
+      if (q.length < 3) { toast('Scrivi almeno 3 caratteri', 'bad'); return; }
+      box.innerHTML = '<div class="hint">Cerco…</div>';
+      const rs = await geocode(q);
+      if (!rs.length) { box.innerHTML = '<div class="hint">Nessun risultato: aggiungi la città.</div>'; return; }
+      box.innerHTML = rs.map((r, i) => '<button class="result" data-i="' + i + '">' + esc(r.short || r.label) + '<span class="r2">' + esc(r.label) + '</span></button>').join('');
+      $$('.result', box).forEach((b) => b.addEventListener('click', () => {
+        startFreeTo(rs[+b.getAttribute('data-i')]);
+      }));
+    };
+    $('#fm-close').addEventListener('click', closeModal);
+    $('#fm-search').addEventListener('click', doSearch);
+    $('#fm-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
+    setTimeout(() => { const i = $('#fm-q'); if (i) i.focus(); }, 200);
+  }
+
+  function startFreeTo(dest) {
+    closeModal();
+    const g = {
+      id: 'free-' + Date.now(), name: 'Modalità libera', city: '', color: '#22d3ee',
+      stops: [{ id: uid(), name: dest.short || dest.label || 'Destinazione', address: dest.label || dest.short || '', lat: dest.lat, lng: dest.lng, notes: '' }]
+    };
+    S.giro = g;
+    S.session = { giroId: g.id, date: todayISO(), done: {}, skipped: [], startedAt: Date.now() };
+    S.allowHighways = true;
+    S.preview = null; S.shownRoute = null; S.previewAlt = null; S.altOn = false;
+    Nav.route = null; Nav.overrideDest = null;
+    showScreen('giro');
+    pushState('giro');
+    ensureMap();
+    try { map.easeTo({ pitch: 0, bearing: 0, duration: 0 }); } catch (e) { }
+    setTimeout(() => { try { map.resize(); } catch (e) { } }, 90);
+    renderGiroChrome(); renderStops(); drawMarkers(); updateMeMarker(); updateEta();
+    computePreview(true);
+    setTimeout(() => { if (S.giro === g && !Nav.active) startNav(); }, 900);
+  }
+
   function openGiro(id) {
     const g = db.giri.find((x) => x.id === id);
     if (!g) return;
     S.giro = g;
+    S.allowHighways = false;
     const today = todayISO();
     if (!db.sessions) db.sessions = {};
     const skey = g.id + '|' + today;
@@ -728,8 +776,12 @@
     const done = S.session ? Object.keys(S.session.done).length : 0;
     const skipped = S.session ? S.session.skipped.length : 0;
     const city = g.city || '';
-    $('#giro-city').textContent = [city, g.stops.length + ' tappe', done ? done + ' fatte' : '', skipped ? skipped + ' saltate' : '']
-      .filter(Boolean).join(' · ') || 'nessuna tappa';
+    if (S.allowHighways) {
+      $('#giro-city').textContent = 'Navigazione libera · autostrade permesse';
+    } else {
+      $('#giro-city').textContent = [city, g.stops.length + ' tappe', done ? done + ' fatte' : '', skipped ? skipped + ' saltate' : '']
+        .filter(Boolean).join(' · ') || 'nessuna tappa';
+    }
     $('#fab-badge').textContent = activeStops().length;
   }
 
@@ -764,8 +816,7 @@
   async function computePreview(fit) {
     if (!S.giro) return;
     if (S.computing) { S.pendingCompute = true; return; }
-    const stops = activeStops();
-    if (!stops.length) {
+    const stops = activeStops();    if (!stops.length) {
       S.preview = null; S.shownRoute = null;
       clearRouteSource();
       setRouteState('Nessuna tappa da fare: aggiungi o ripristina una tappa', 'good');
@@ -787,7 +838,7 @@
     S.computing = true;
     setRouteState('Calcolo percorso senza autostrada…');
     try {
-      const r = await routePoints(start.points);
+      const r = await routePoints(start.points, { allowHighways: !!S.allowHighways });
       if (!S.giro) return;
       S.preview = r;
       S.shownRoute = r;
@@ -798,11 +849,11 @@
       const hw = r.motorwayWarning;
       const tt = r.source === 'tomtom';
       const trafficTxt = tt ? (r.trafficDelay > 90 ? 'traffico +' + Math.round(r.trafficDelay / 60) + ' min' : 'traffico ok') : 'senza traffico';
+      const roadTxt = S.allowHighways ? 'autostrade permesse' : (hw ? '⚠ possibile tratto autostradale, controlla' : 'senza autostrada ✓');
       setRouteState(
         fmtKmVal(r.km) + ' · ' + timeParts(r.sec).main + (timeParts(r.sec).unit ? ' ' + timeParts(r.sec).unit : '') +
-        ' · ' + (hw ? '⚠ possibile tratto autostradale, controlla' : 'senza autostrada ✓') +
-        ' · ' + trafficTxt,
-        hw ? 'warn' : ''
+        ' · ' + roadTxt + ' · ' + trafficTxt,
+        hw && !S.allowHighways ? 'warn' : ''
       );
       updateEta(); renderStops();
       if (fit && !Nav.active) fitAll();
@@ -1819,7 +1870,7 @@
     if (!dest || !S.me) return;
     Nav.busy = true;
     try {
-      const r = await routePoints([stopPoint(S.me), stopPoint(dest)]);
+      const r = await routePoints([stopPoint(S.me), stopPoint(dest)], { allowHighways: !!S.allowHighways });
       const leg = r.legs[0];
       if (!leg) throw new Error('nessun percorso');
       Nav.route = leg;
@@ -3035,7 +3086,7 @@
   function bind() {
     $('#btn-settings').addEventListener('click', openSettings);
     $('#btn-new-giro').addEventListener('click', () => openGiroModal(null));
-    $('#btn-cycle').addEventListener('click', openCycleModal);
+    $('#btn-free').addEventListener('click', openFreeMode);
     $('#btn-back').addEventListener('click', () => {
       if ($('#sheet').classList.contains('on')) { closeSheet(true); return; }
       if (Nav.active && !confirm('Fermare la navigazione?')) return;
