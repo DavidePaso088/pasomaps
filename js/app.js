@@ -821,7 +821,7 @@
       stops: [{ id: uid(), name: dest.short || dest.label || 'Destinazione', address: dest.label || dest.short || '', lat: dest.lat, lng: dest.lng, notes: '' }]
     };
     S.giro = g;
-    S.session = { giroId: g.id, date: todayISO(), done: {}, skipped: [], startedAt: Date.now() };
+    S.session = { giroId: g.id, date: todayISO(), done: {}, skipped: [], outcomes: {}, startedAt: Date.now() };
     S.allowHighways = true;
     S.preview = null; S.shownRoute = null; S.previewAlt = null; S.altOn = false;
     Nav.route = null; Nav.overrideDest = null;
@@ -844,9 +844,12 @@
     if (!db.sessions) db.sessions = {};
     const skey = g.id + '|' + today;
     if (!db.sessions[skey]) {
-      db.sessions[skey] = { giroId: g.id, date: today, done: {}, skipped: [], startedAt: Date.now() };
+      db.sessions[skey] = { giroId: g.id, date: today, done: {}, skipped: [], outcomes: {}, startedAt: Date.now() };
     }
     S.session = db.sessions[skey];
+    if (!S.session.done) S.session.done = {};
+    if (!Array.isArray(S.session.skipped)) S.session.skipped = [];
+    if (!S.session.outcomes) S.session.outcomes = {};
     db.settings.lastGiroId = g.id;
     saveDB();
     S.preview = null; S.previewAlt = null; S.altOn = false;
@@ -1320,6 +1323,36 @@
     }
   }
 
+  /* ---------- esiti delle consegne ---------- */
+  const OUTCOMES = {
+    ok: { label: 'Consegnata', short: '✓ Consegnata', cls: 'ok', delivered: true },
+    paid: { label: 'Consegnata, ha pagato', short: 'Pagato', cls: 'paid', delivered: true },
+    unpaid: { label: 'Consegnata, non ha pagato', short: '✓ Non pagato', cls: 'unpaid', delivered: true },
+    absent: { label: 'Cliente non presente', short: '✗ Non presente', cls: 'absent', delivered: false },
+    failed: { label: 'Non consegnata', short: '✗ Non consegnata', cls: 'failed', delivered: false }
+  };
+
+  function eur(n) {
+    const v = Math.round((Number(n) || 0) * 100) / 100;
+    return '€ ' + (Math.abs(v % 1) < 0.005 ? String(Math.round(v)) : v.toFixed(2).replace('.', ','));
+  }
+
+  function outcomeShort(oc) {
+    const d = OUTCOMES[oc.code];
+    if (!d) return 'Esito';
+    if (oc.code === 'paid') return '✓ ' + eur(oc.amount);
+    return d.short;
+  }
+
+  function outcomeLong(oc) {
+    const d = OUTCOMES[oc.code];
+    if (!d) return '';
+    if (oc.code === 'paid') return 'Ha pagato ' + eur(oc.amount);
+    if (oc.code === 'ok') return 'Consegnata';
+    if (oc.code === 'unpaid') return 'Consegnata · non ha pagato';
+    return d.label;
+  }
+
   /* =============================== K. SHEET TAPPE =============================== */
   function openSheet() {
     $('#sheet').classList.add('on');
@@ -1353,6 +1386,7 @@
     $('#sheet-count').textContent = S.giro.stops.length;
     if (!S.giro.stops.length) {
       box.innerHTML = '<div class="empty">Nessuna tappa in questo giro.<br>Tocca <b>+ Aggiungi</b> e cerca l’indirizzo.</div>';
+      const s0 = $('#sheet-sum'); if (s0) s0.hidden = true;
       return;
     }
     box.innerHTML = S.giro.stops.map((st) => {
@@ -1371,6 +1405,7 @@
       }
       const total = S.giro.stops.length;
       const ph = photoCounts[st.id] || 0;
+      const oc = (sess.outcomes || {})[st.id];
       return '<div class="stop-item' + (cur ? ' cur' : '') + (done ? ' done' : '') + (skipped ? ' skipped' : '') + '" data-id="' + st.id + '">' +
         '<div class="stop-idx">' + (done ? '✓' : skipped ? '–' : idx) + '</div>' +
         '<div class="stop-main" data-center="' + st.id + '">' +
@@ -1378,6 +1413,7 @@
         '<div class="stop-addr">' + esc(st.address || '') + '</div>' +
         (st.approx ? '<div class="stop-note" style="color:#ffc98b">civico approssimato · verifica il pin</div>' : '') +
         (st.notes ? '<div class="stop-note">' + esc(st.notes) + '</div>' : '') +
+        (oc ? '<div class="stop-out ' + esc((OUTCOMES[oc.code] || {}).cls || '') + '">' + esc(outcomeLong(oc)) + '</div>' : '') +
         '<div class="stop-foot">' +
         '<div class="mv-group">' +
         '<button class="mv" data-act="up" data-id="' + st.id + '" aria-label="Sposta su"' + (idx <= 1 ? ' disabled' : '') + '>↑</button>' +
@@ -1388,9 +1424,8 @@
         '</div>' +
         '</div>' +
         '<div class="stop-acts">' +
-        '<button class="sa go" data-act="nav" data-id="' + st.id + '" title="Naviga">➤</button>' +
-        '<button class="sa ' + (skipped ? 'warn' : '') + '" data-act="skip" data-id="' + st.id + '" title="' + (skipped ? 'Ripristina' : 'Salta oggi') + '">' + (skipped ? '↺' : '⤼') + '</button>' +
-        '<button class="sa" data-act="edit" data-id="' + st.id + '" title="Modifica">✎</button>' +
+        '<button class="sa out' + (oc ? ' set ' + esc((OUTCOMES[oc.code] || {}).cls || '') : '') + '" data-act="outcome" data-id="' + st.id + '" title="Esito della consegna" aria-label="Esito della consegna">⚑</button>' +
+        '<button class="sa" data-act="edit" data-id="' + st.id + '" title="Modifica tappa" aria-label="Modifica tappa">✎</button>' +
         '</div>' +
         '</div>';
     }).join('');
@@ -1415,6 +1450,29 @@
     } else if (body) {
       body.scrollTop = prevTop;
     }
+    paintOutcomeSummary(sess);
+  }
+
+  function paintOutcomeSummary(sess) {
+    const el = $('#sheet-sum');
+    if (!el) return;
+    const outs = (sess && sess.outcomes) || {};
+    let cash = 0, unpaid = 0, notDel = 0, n = 0;
+    Object.keys(outs).forEach((id) => {
+      const o = outs[id];
+      if (!o || !OUTCOMES[o.code]) return;
+      n++;
+      if (o.code === 'paid') cash += Number(o.amount) || 0;
+      else if (o.code === 'unpaid') unpaid++;
+      else if (o.code === 'absent' || o.code === 'failed') notDel++;
+    });
+    if (!n) { el.hidden = true; el.textContent = ''; return; }
+    const parts = [];
+    if (cash > 0) parts.push('incassato ' + eur(cash));
+    if (unpaid) parts.push(unpaid + (unpaid === 1 ? ' non pagata' : ' non pagate'));
+    if (notDel) parts.push(notDel + (notDel === 1 ? ' non consegnata' : ' non consegnate'));
+    el.hidden = !parts.length;
+    el.textContent = parts.length ? 'Oggi: ' + parts.join(' · ') : '';
   }
 
   /* =============================== L. EDITOR TAPPA =============================== */
@@ -1942,6 +2000,98 @@
   }
 
   /* =============================== M. NAVIGAZIONE =============================== */
+  /* ---------- esito della consegna ---------- */
+  function openOutcomeModal(stopId) {
+    if (!S.giro) return;
+    const st = S.giro.stops.find((s) => s.id === stopId);
+    if (!st) return;
+    if (!S.session.outcomes) S.session.outcomes = {};
+    const cur = S.session.outcomes[stopId] || null;
+    let code = cur ? cur.code : '';
+    const opts = [
+      { c: 'ok', ic: '✓', t: 'Consegnata' },
+      { c: 'paid', ic: '💶', t: 'Ha pagato una cifra' },
+      { c: 'unpaid', ic: '⚠', t: 'Non ha pagato' },
+      { c: 'absent', ic: '🚪', t: 'Non era presente' },
+      { c: 'failed', ic: '✕', t: 'Non consegnata', wide: true }
+    ];
+    openModal('' +
+      '<div class="modal-head"><b>Esito · ' + esc(st.name || st.address || 'tappa') + '</b><button class="x" id="o-close">✕</button></div>' +
+      '<p class="hint" style="margin-top:-6px">Tocca com’è andata: la tappa viene segnata da sola come fatta o saltata, e l’incassato si somma nella lista tappe.</p>' +
+      '<div class="out-grid" id="o-grid">' + opts.map((o) => '<button data-code="' + o.c + '"' + (o.wide ? ' class="wide"' : '') + '><span class="ic">' + o.ic + '</span>' + o.t + '</button>').join('') + '</div>' +
+      '<div class="field" id="o-amt-wrap" style="display:none"><label>Quanto ha pagato (€)</label><input id="o-amt" type="text" inputmode="decimal" autocomplete="off" placeholder="es. 45,50" value="' + ((cur && cur.code === 'paid' && cur.amount) ? esc((Math.abs(cur.amount % 1) < 0.005 ? String(Math.round(cur.amount)) : Number(cur.amount).toFixed(2)).replace('.', ',')) : '') + '"></div>' +
+      '<div class="btn-row">' + (cur ? '<button class="btn danger" id="o-clear">Togli</button>' : '') +
+      '<button class="btn" id="o-cancel">Annulla</button><button class="btn primary" id="o-save">Salva</button></div>');
+    const paint = () => {
+      $$('#o-grid button').forEach((b) => b.classList.toggle('sel', b.getAttribute('data-code') === code));
+      const w = $('#o-amt-wrap');
+      if (w) w.style.display = code === 'paid' ? '' : 'none';
+    };
+    $$('#o-grid button').forEach((b) => b.addEventListener('click', () => {
+      code = b.getAttribute('data-code');
+      paint();
+      if (code === 'paid') setTimeout(() => { const i = $('#o-amt'); if (i) i.focus(); }, 60);
+    }));
+    paint();
+    $('#o-close').addEventListener('click', closeModal);
+    $('#o-cancel').addEventListener('click', closeModal);
+    if ($('#o-clear')) $('#o-clear').addEventListener('click', () => {
+      applyOutcome(stopId, null, null);
+      closeModal();
+      toast('Esito rimosso', 'good');
+    });
+    $('#o-save').addEventListener('click', () => {
+      if (!code) { toast('Scegli un esito', 'bad'); return; }
+      let amount = null;
+      if (code === 'paid') {
+        const raw = String($('#o-amt').value || '').replace(/[^\d.,]/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(',', '.');
+        amount = parseFloat(raw);
+        if (!isFinite(amount) || amount <= 0) { toast('Scrivi quanto ha pagato', 'bad'); return; }
+      }
+      applyOutcome(stopId, code, amount);
+      closeModal();
+      toast('Esito: ' + OUTCOMES[code].label + (amount ? ' · ' + eur(amount) : ''), 'good');
+      vibrate(20);
+    });
+  }
+
+  function applyOutcome(stopId, code, amount) {
+    if (!S.session) return;
+    if (!S.session.outcomes) S.session.outcomes = {};
+    if (!S.session.skipped) S.session.skipped = [];
+    if (!code) {
+      const prev = S.session.outcomes[stopId];
+      delete S.session.outcomes[stopId];
+      if (prev) {
+        const wasDelivered = !!(OUTCOMES[prev.code] && OUTCOMES[prev.code].delivered);
+        if (wasDelivered) delete S.session.done[stopId];
+        else S.session.skipped = S.session.skipped.filter((x) => x !== stopId);
+      }
+    } else {
+      S.session.outcomes[stopId] = { code: code, amount: code === 'paid' ? amount : null, at: Date.now() };
+      const d = OUTCOMES[code];
+      if (d && d.delivered) {
+        if (!S.session.done[stopId]) S.session.done[stopId] = Date.now();
+        S.session.skipped = S.session.skipped.filter((x) => x !== stopId);
+      } else {
+        delete S.session.done[stopId];
+        if (S.session.skipped.indexOf(stopId) === -1) S.session.skipped.push(stopId);
+      }
+    }
+    saveDB();
+    renderStops(); drawMarkers(); renderGiroChrome(); updateEta();
+    const act = activeStops();
+    const ov = (Nav.active && Nav.overrideDest) ? Nav.overrideDest : null;
+    if (Nav.active && !ov) {
+      if (!act.length) { stopNav(); computePreview(true); return; }
+      Nav.route = null; Nav.spoken = {}; Nav.lastAlong = null;
+      computePreview(false);
+      refreshNavRoute();
+      return;
+    }
+    computePreview(true);
+  }
+
   let voiceIt = null;
   function speak(text) {
     if (!db.settings.voice || !('speechSynthesis' in window)) return;
@@ -2649,7 +2799,7 @@
     $('#s-reset-day').addEventListener('click', () => {
       if (!S.giro) { toast('Apri prima un giro', 'bad'); return; }
       if (!confirm('Azzerare lo stato di oggi del giro “' + S.giro.name + '”? Le tappe restano, tornano solo “da fare”.')) return;
-      S.session = { giroId: S.giro.id, date: todayISO(), done: {}, skipped: [], startedAt: Date.now() };
+      S.session = { giroId: S.giro.id, date: todayISO(), done: {}, skipped: [], outcomes: {}, startedAt: Date.now() };
       if (!db.sessions) db.sessions = {};
       db.sessions[S.giro.id + '|' + S.session.date] = S.session;
       saveDB(); closeModal(); renderStops(); drawMarkers(); renderGiroChrome(); updateEta(); computePreview(true);
@@ -3498,6 +3648,7 @@
         if (act === 'skip') { toggleSkip(id); }
         if (act === 'edit') { openStopEditor(id, {}); }
         if (act === 'photo') { openPhotos(id); }
+        if (act === 'outcome') { openOutcomeModal(id); }
         if (act === 'up') { moveStopBy(id, -1); }
         if (act === 'down') { moveStopBy(id, 1); }
         return;

@@ -1,6 +1,17 @@
 {
   "builds": [
     {
+      "build": 57,
+      "date": "2026-11-20",
+      "changes": [
+        "Esito della consegna: ⚑ su ogni tappa — consegnata, ha pagato una cifra, non ha pagato, non era presente, non consegnata",
+        "Con un esito la tappa si segna da sola come fatta o saltata",
+        "Nella lista compare il totale di oggi: incassato, non pagate, non consegnate",
+        "Riga tappa più pulita: a destra restano solo ⚑ e ✎, con icone più grandi e leggibili",
+        "Tasti ➤ e ⤼ tolti dalla riga: la navigazione resta sul pulsante grande, “Salta” nel banner"
+      ]
+    },
+    {
       "build": 53,
       "date": "2026-11-20",
       "changes": [
