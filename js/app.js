@@ -66,6 +66,8 @@
 
   let db = null;
   let saveTimer = null;
+  let flashStopId = null;
+  let flashTimer = null;
 
   function freshDB() {
     return { v: 2, truck: Object.assign({}, DEFAULT_TRUCK), settings: Object.assign({}, DEFAULT_SETTINGS), giri: [], sessions: {}, lastExport: 0 };
@@ -1407,7 +1409,7 @@
       const total = S.giro.stops.length;
       const ph = photoCounts[st.id] || 0;
       const oc = (sess.outcomes || {})[st.id];
-      return '<div class="stop-item' + (cur ? ' cur' : '') + (done ? ' done' : '') + (skipped ? ' skipped' : '') + '" data-id="' + st.id + '">' +
+      return '<div class="stop-item' + (cur ? ' cur' : '') + (done ? ' done' : '') + (skipped ? ' skipped' : '') + (st.id === flashStopId ? ' flash' : '') + '" data-id="' + st.id + '">' +
         '<div class="stop-idx">' + (done ? '✓' : skipped ? '–' : idx) + '</div>' +
         '<div class="stop-main" data-center="' + st.id + '">' +
         '<div class="stop-name">' + esc(st.name || 'Tappa ' + idx) + '</div>' +
@@ -1770,8 +1772,7 @@
       (isNew ? '' : '<button class="btn danger" id="f-del">Elimina</button>') +
       '<button class="btn" id="m-cancel">Annulla</button>' +
       '<button class="btn primary" id="f-save">Salva</button>' +
-      '</div>' +
-      (!isNew && stopIndexLabel(st.id) !== 1 ? '<button class="btn-ghost" id="f-first">↑ Rendi prossima tappa</button>' : '');
+      '</div>';
 
     openModal(html);
     const resBox = $('#f-results');
@@ -1867,17 +1868,6 @@
       delete photoCounts[st.id];
       S.giro.stops = S.giro.stops.filter((x) => x.id !== st.id);
       saveDB(); closeModal(); renderStops(); drawMarkers(); renderGiroChrome(); computePreview(true); toast('Tappa eliminata', 'good');
-    });
-    if ($('#f-first')) $('#f-first').addEventListener('click', () => {
-      const arr = S.giro.stops;
-      const i = arr.findIndex((x) => x.id === st.id);
-      const firstActive = arr.findIndex((x) => !S.session.done[x.id] && S.session.skipped.indexOf(x.id) === -1);
-      if (i < 0) return;
-      const [item] = arr.splice(i, 1);
-      arr.splice(firstActive < 0 ? 0 : firstActive, 0, item);
-      // se era saltata, la ripristino
-      S.session.skipped = S.session.skipped.filter((id) => id !== st.id);
-      saveDB(); closeModal(); renderStops(); drawMarkers(); computePreview(true); toast('Ora è la prossima tappa', 'good');
     });
     $('#f-save').addEventListener('click', async () => {
       const name = $('#f-name').value.trim();
@@ -2562,15 +2552,21 @@
       speak('Non trovo ' + q);
       return;
     }
-    S.giro.stops.push({ id: uid(), name: '', address: q, lat: res.best.lat, lng: res.best.lng, notes: '', approx: !!res.approx });
+    const newId = uid();
+    S.giro.stops.push({ id: newId, name: '', address: q, lat: res.best.lat, lng: res.best.lng, notes: '', approx: !!res.approx });
     saveDB();
     if (!$('#sheet').classList.contains('on')) openSheet({ noScroll: true });
+    flashStopId = newId;
+    if (flashTimer) clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => {
+      flashStopId = null;
+      const el = document.querySelector('.stop-item.flash');
+      if (el) el.classList.remove('flash');
+    }, 3400);
     renderStops({ scroll: 'bottom' });
     setTimeout(() => {
       const b = $('#sheet-body');
       if (b) b.scrollTop = b.scrollHeight;
-      const last = document.querySelector('#stops-list .stop-item:last-child');
-      if (last) { last.classList.add('flash'); setTimeout(() => last.classList.remove('flash'), 3200); }
     }, 380);
     drawMarkers(); renderGiroChrome(); computePreview(false); updateEta();
     toast('Aggiunta: ' + q, 'good');
@@ -3612,7 +3608,7 @@
       const st = S.pendingStop;
       const act = activeStops();
       if (st && act.length && st.id !== act[0].id) {
-        toast('Prima raggiungi la tappa attuale: usa “Rendi prossima” nella scheda', 'bad');
+        toast('Prima raggiungi la tappa attuale: trascinala in cima nella lista per anticiparla', 'bad');
         return;
       }
       startNav();

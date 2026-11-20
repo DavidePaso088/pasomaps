@@ -4,7 +4,9 @@
       "build": 59,
       "date": "2026-11-20",
       "changes": [
-        "La tappa aggiunta a voce lampeggia per oltre 3 secondi invece di 1,4: si vede anche con la lista che scorre"
+        "La tappa aggiunta a voce resta evidenziata per 3 secondi e non sparisce più quando l'app ricalcola il percorso",
+        "Tolto “↑ Rendi prossima tappa” dalla scheda tappa",
+        "Per spostare una via restano le frecce ↑ ↓ nella riga e il trascinamento con pressione lunga"
       ]
     },
     {
