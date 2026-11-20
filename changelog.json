@@ -1,6 +1,13 @@
 {
   "builds": [
     {
+      "build": 59,
+      "date": "2026-11-20",
+      "changes": [
+        "La tappa aggiunta a voce lampeggia per oltre 3 secondi invece di 1,4: si vede anche con la lista che scorre"
+      ]
+    },
+    {
       "build": 58,
       "date": "2026-11-20",
       "changes": [

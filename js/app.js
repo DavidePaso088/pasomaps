@@ -2570,7 +2570,7 @@
       const b = $('#sheet-body');
       if (b) b.scrollTop = b.scrollHeight;
       const last = document.querySelector('#stops-list .stop-item:last-child');
-      if (last) { last.classList.add('flash'); setTimeout(() => last.classList.remove('flash'), 1400); }
+      if (last) { last.classList.add('flash'); setTimeout(() => last.classList.remove('flash'), 3200); }
     }, 380);
     drawMarkers(); renderGiroChrome(); computePreview(false); updateEta();
     toast('Aggiunta: ' + q, 'good');
