@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css">
-<link rel="stylesheet" href="css/app.css?v=45">
+<link rel="stylesheet" href="css/app.css?v=46">
 </head>
 <body>
 
@@ -36,7 +36,7 @@
     <div id="giri-list" class="giri-list"></div>
     <button id="btn-new-giro" class="btn-wide">+ Nuovo giro</button>
     <button id="btn-free" class="btn-ghost" style="margin-top:10px">🧭 Modalità libera <span style="color:#8fa1bd;font-weight:400">· navigatore normale</span></button>
-    <p class="fine">Percorsi calcolati <b>evitando sempre le autostrade</b>.<br>Dati salvati solo su questo telefono.<br><span id="build-tag" style="opacity:.7"></span></p>
+    <p class="fine">Percorsi calcolati <b>evitando sempre le autostrade</b>.<br>Nella <b>modalità libera</b> le autostrade sono permesse.<br>Dati salvati solo su questo telefono.<br><span id="build-tag" style="opacity:.7"></span></p>
   </div>
 </section>
 
@@ -68,6 +68,7 @@
     </div>
     <button id="btn-mic" class="mic-fab" aria-label="Comandi vocali" title="Comandi vocali">🎤</button>
     <button id="btn-nav" class="nav-fab" aria-label="Naviga">➤</button>
+    <button id="btn-cam" class="cam-fab" aria-label="Foto della consegna" title="Foto della consegna">📷</button>
     <button id="btn-sheet" class="fab">
       <span class="fab-ic">☰</span><span>Tappe</span>
       <span class="fab-badge" id="fab-badge">0</span>
@@ -119,6 +120,6 @@
 <div id="update-bar" hidden><div class="ub-title">Nuova versione pronta — tocca per aggiornare</div></div>
 
 <script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
-<script src="js/app.js?v=48"></script>
+<script src="js/app.js?v=49"></script>
 </body>
 </html>

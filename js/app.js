@@ -125,6 +125,111 @@
     catch (e) { toast('Memoria del telefono piena: esporta un backup', 'bad'); }
   }
 
+  /* ---------- foto consegne (IndexedDB, fuori dal JSON dei giri) ---------- */
+  const PhotoStore = (() => {
+    let dbp = null;
+    function open() {
+      if (dbp) return Promise.resolve(dbp);
+      return new Promise((res, rej) => {
+        try {
+          const r = indexedDB.open('pasomaps-photos', 1);
+          r.onupgradeneeded = () => {
+            const d = r.result;
+            if (!d.objectStoreNames.contains('photos')) {
+              const s = d.createObjectStore('photos', { keyPath: 'id' });
+              s.createIndex('stopId', 'stopId', { unique: false });
+            }
+          };
+          r.onsuccess = () => { dbp = r.result; res(dbp); };
+          r.onerror = () => rej(r.error);
+        } catch (e) { rej(e); }
+      });
+    }
+    async function put(stopId, blob) {
+      const d = await open();
+      return new Promise((res, rej) => {
+        const tx = d.transaction('photos', 'readwrite');
+        const id = uid();
+        tx.objectStore('photos').put({ id: id, stopId: stopId, at: Date.now(), blob: blob });
+        tx.oncomplete = () => res(id);
+        tx.onerror = () => rej(tx.error);
+      });
+    }
+    async function list(stopId) {
+      const d = await open();
+      return new Promise((res, rej) => {
+        const tx = d.transaction('photos', 'readonly');
+        const rq = tx.objectStore('photos').index('stopId').getAll(stopId);
+        rq.onsuccess = () => res(rq.result || []);
+        rq.onerror = () => rej(rq.error);
+      });
+    }
+    async function del(id) {
+      const d = await open();
+      return new Promise((res, rej) => {
+        const tx = d.transaction('photos', 'readwrite');
+        tx.objectStore('photos').delete(id);
+        tx.oncomplete = () => res(true);
+        tx.onerror = () => rej(tx.error);
+      });
+    }
+    async function delStop(stopId) {
+      const items = await list(stopId);
+      for (const it of items) { try { await del(it.id); } catch (e) { } }
+      return true;
+    }
+    async function counts() {
+      const d = await open();
+      return new Promise((res, rej) => {
+        const out = {};
+        const tx = d.transaction('photos', 'readonly');
+        const rq = tx.objectStore('photos').index('stopId').openKeyCursor();
+        rq.onsuccess = () => {
+          const c = rq.result;
+          if (!c) { res(out); return; }
+          out[c.key] = (out[c.key] || 0) + 1;
+          c.continue();
+        };
+        rq.onerror = () => rej(rq.error);
+      });
+    }
+    return { put: put, list: list, del: del, delStop: delStop, counts: counts };
+  })();
+
+  const photoCounts = {};
+  async function refreshPhotoCounts() {
+    try {
+      const c = await PhotoStore.counts();
+      Object.keys(photoCounts).forEach((k) => { delete photoCounts[k]; });
+      Object.keys(c).forEach((k) => { photoCounts[k] = c[k]; });
+    } catch (e) { }
+    return photoCounts;
+  }
+  function bumpPhotoCount(stopId, delta) {
+    const n = (photoCounts[stopId] || 0) + delta;
+    if (n > 0) photoCounts[stopId] = n; else delete photoCounts[stopId];
+  }
+
+  function compressImage(file, maxSide) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        try {
+          const scale = Math.min(1, (maxSide || 1100) / Math.max(img.width, img.height));
+          const w = Math.max(1, Math.round(img.width * scale));
+          const h = Math.max(1, Math.round(img.height * scale));
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          c.getContext('2d').drawImage(img, 0, 0, w, h);
+          c.toBlob((blob) => { URL.revokeObjectURL(url); if (blob) resolve(blob); else reject(new Error('compress')); }, 'image/jpeg', 0.65);
+        } catch (e) { URL.revokeObjectURL(url); reject(e); }
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image')); };
+      img.src = url;
+    });
+  }
+
   /* =============================== C. GEO =============================== */
   const R_EARTH = 6371008.8;
   const toRad = (d) => d * Math.PI / 180;
@@ -1126,6 +1231,13 @@
     const act = activeStops();
     const ov = (Nav.active && Nav.overrideDest) ? Nav.overrideDest : null;
     $('#fab-badge').textContent = act.length;
+    const camTarget = ov || act[0];
+    const camN = (camTarget && camTarget.id) ? (photoCounts[camTarget.id] || 0) : 0;
+    const camEl = $('#btn-cam');
+    if (camEl) {
+      if (camN) { camEl.classList.add('has'); camEl.setAttribute('data-n', camN); }
+      else { camEl.classList.remove('has'); camEl.removeAttribute('data-n'); }
+    }
     if (!act.length && !ov) {
       const any = S.giro && S.giro.stops ? S.giro.stops.length : 0;
       const noPos = (S.giro && S.giro.stops) ? S.giro.stops.filter((s) => !hasCoords(s)).length : 0;
@@ -1258,6 +1370,7 @@
         meta = '<div class="stop-meta" style="color:#ffc98b"><span>posizione mancante</span></div>';
       }
       const total = S.giro.stops.length;
+      const ph = photoCounts[st.id] || 0;
       return '<div class="stop-item' + (cur ? ' cur' : '') + (done ? ' done' : '') + (skipped ? ' skipped' : '') + '" data-id="' + st.id + '">' +
         '<div class="stop-idx">' + (done ? '✓' : skipped ? '–' : idx) + '</div>' +
         '<div class="stop-main" data-center="' + st.id + '">' +
@@ -1270,6 +1383,7 @@
         '<button class="mv" data-act="up" data-id="' + st.id + '" aria-label="Sposta su"' + (idx <= 1 ? ' disabled' : '') + '>↑</button>' +
         '<button class="mv" data-act="down" data-id="' + st.id + '" aria-label="Sposta giù"' + (idx >= total ? ' disabled' : '') + '>↓</button>' +
         '</div>' +
+        '<button class="mv ph-btn' + (ph ? ' has' : '') + '" data-act="photo" data-id="' + st.id + '" title="Foto consegna" aria-label="Foto consegna">📷' + (ph ? '<i class="ph-n">' + ph + '</i>' : '') + '</button>' +
         meta +
         '</div>' +
         '</div>' +
@@ -1588,6 +1702,11 @@
       '<button data-add="Lasciare in portineria">Portineria</button><button data-add="Lasciare nel garage">Garage</button>' +
       '<button data-add="Consegna a mano">A mano</button><button data-add="Non suonare">Non suonare</button>' +
       '</div></div>' +
+      '<div class="field"><label>Foto della consegna</label>' +
+      (isNew
+        ? '<div class="hint">Prima salva la tappa: poi scatti le foto dal tasto 📷 nella lista o nella schermata di navigazione.</div>'
+        : '<div class="hint">' + ((photoCounts[st.id] || 0) ? (photoCounts[st.id] + (photoCounts[st.id] === 1 ? ' foto salvata' : ' foto salvate')) : 'Nessuna foto') + ' · si gestiscono dal tasto <b>📷</b> qui fuori, così non perdi le modifiche in corso.</div>') +
+      '</div>' +
       '<div class="btn-row">' +
       (isNew ? '' : '<button class="btn danger" id="f-del">Elimina</button>') +
       '<button class="btn" id="m-cancel">Annulla</button>' +
@@ -1680,6 +1799,8 @@
     $('#m-cancel').addEventListener('click', closeModal);
     if ($('#f-del')) $('#f-del').addEventListener('click', () => {
       if (!confirm('Eliminare definitivamente questa tappa dal giro?')) return;
+      PhotoStore.delStop(st.id).catch(() => { });
+      delete photoCounts[st.id];
       S.giro.stops = S.giro.stops.filter((x) => x.id !== st.id);
       saveDB(); closeModal(); renderStops(); drawMarkers(); renderGiroChrome(); computePreview(true); toast('Tappa eliminata', 'good');
     });
@@ -1721,6 +1842,98 @@
       toast(isNew ? 'Tappa aggiunta · salvata per le prossime volte' : 'Tappa aggiornata', 'good');
       vibrate(20);
     });
+  }
+
+  /* ---------- foto della consegna ---------- */
+  function openPhotos(stopId) {
+    if (!S.giro) { toast('Apri prima un giro', 'bad'); return; }
+    const st = S.giro.stops.find((s) => s.id === stopId);
+    if (!st) { toast('Nessuna tappa da fotografare', 'bad'); return; }
+    const urls = [];
+    const clearUrls = () => { urls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) { } }); urls.length = 0; };
+    openModal('' +
+      '<div class="modal-head"><b>Foto · ' + esc(st.name || st.address || 'tappa') + '</b><button class="x" id="ph-close">✕</button></div>' +
+      '<div class="photo-grid" id="ph-grid"><div class="photo-empty">Carico…</div></div>' +
+      '<div class="photo-acts">' +
+      '<button class="btn primary" id="ph-cam">📷 Scatta foto</button>' +
+      '<button class="btn" id="ph-gal">🖼 Galleria</button>' +
+      '</div>' +
+      '<input type="file" id="ph-in-cam" accept="image/*" capture="environment" hidden>' +
+      '<input type="file" id="ph-in-gal" accept="image/*" multiple hidden>' +
+      '<p class="hint" style="margin-top:10px">Le foto restano <b>solo su questo telefono</b>: non entrano nel backup dei giri e non vanno su internet. Se cancelli la tappa, spariscono.</p>' +
+      '<div class="btn-row"><button class="btn" id="ph-done">Chiudi</button></div>');
+
+    async function render() {
+      const grid = $('#ph-grid');
+      if (!grid) return;
+      let items = [];
+      try { items = await PhotoStore.list(stopId); } catch (e) { }
+      items.sort((a, b) => (b.at || 0) - (a.at || 0));
+      clearUrls();
+      if (!items.length) {
+        grid.innerHTML = '<div class="photo-empty">Nessuna foto.<br>Scatta la prova di consegna: pacco, portone, ricevuta.</div>';
+        return;
+      }
+      grid.innerHTML = items.map((it) => {
+        const u = URL.createObjectURL(it.blob); urls.push(u);
+        return '<div class="photo-cell"><img src="' + u + '" alt="Foto consegna" data-view="' + it.id + '">' +
+          '<button class="del" data-del="' + it.id + '" aria-label="Elimina foto">✕</button></div>';
+      }).join('');
+      $$('.photo-cell img', grid).forEach((im) => im.addEventListener('click', () => {
+        const it = items.find((x) => x.id === im.getAttribute('data-view'));
+        if (it) viewer(it);
+      }));
+      $$('.photo-cell .del', grid).forEach((b) => b.addEventListener('click', async () => {
+        if (!confirm('Eliminare questa foto?')) return;
+        await PhotoStore.del(b.getAttribute('data-del'));
+        bumpPhotoCount(stopId, -1);
+        renderStops();
+        updateEta();
+        render();
+        toast('Foto eliminata', 'good');
+      }));
+    }
+
+    function viewer(it) {
+      clearUrls();
+      const u = URL.createObjectURL(it.blob); urls.push(u);
+      const base = (st.name || st.address || 'foto').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 40).toLowerCase() || 'foto';
+      const name = 'pasomaps-' + base + '-' + String(it.id || '').slice(-4) + '.jpg';
+      $('#modal-card').innerHTML = '' +
+        '<div class="modal-head"><b>Foto</b><button class="x" id="pv-close">✕</button></div>' +
+        '<img class="photo-big" src="' + u + '" alt="Foto consegna">' +
+        '<div class="btn-row"><button class="btn" id="pv-back">← Indietro</button><a class="btn primary" href="' + u + '" download="' + name + '" style="text-decoration:none">⬇ Scarica</a></div>';
+      $('#pv-close').addEventListener('click', () => { clearUrls(); closeModal(); });
+      $('#pv-back').addEventListener('click', () => { openPhotos(stopId); });
+    }
+
+    async function addFiles(fileList) {
+      const files = Array.from(fileList || []).filter((f) => /^image\//.test(f.type || ''));
+      if (!files.length) return;
+      let ok = 0;
+      toast(files.length > 1 ? 'Preparo ' + files.length + ' foto…' : 'Preparo la foto…');
+      for (const f of files) {
+        try {
+          const blob = await compressImage(f, 1200);
+          await PhotoStore.put(stopId, blob);
+          bumpPhotoCount(stopId, 1);
+          ok++;
+        } catch (e) { }
+      }
+      renderStops();
+      updateEta();
+      await render();
+      if (ok) { toast(ok > 1 ? ok + ' foto salvate' : 'Foto salvata', 'good'); vibrate(20); }
+      else toast('Foto non salvata: riprova', 'bad');
+    }
+
+    $('#ph-close').addEventListener('click', () => { clearUrls(); closeModal(); });
+    $('#ph-done').addEventListener('click', () => { clearUrls(); closeModal(); });
+    $('#ph-cam').addEventListener('click', () => $('#ph-in-cam').click());
+    $('#ph-gal').addEventListener('click', () => $('#ph-in-gal').click());
+    $('#ph-in-cam').addEventListener('change', (e) => { addFiles(e.target.files); e.target.value = ''; });
+    $('#ph-in-gal').addEventListener('change', (e) => { addFiles(e.target.files); e.target.value = ''; });
+    render();
   }
 
   /* =============================== M. NAVIGAZIONE =============================== */
@@ -2276,6 +2489,7 @@
     });
     if ($('#g-del')) $('#g-del').addEventListener('click', () => {
       if (!confirm('Eliminare il giro “' + g.name + '” con tutte le sue tappe?')) return;
+      (g.stops || []).forEach((s) => { PhotoStore.delStop(s.id).catch(() => { }); delete photoCounts[s.id]; });
       db.giri = db.giri.filter((x) => x.id !== g.id);
       Object.keys(db.sessions || {}).forEach((k) => { if (k.indexOf(g.id + '|') === 0) delete db.sessions[k]; });
       saveDB(); closeModal(); renderHome();
@@ -2337,7 +2551,7 @@
       '<button class="btn" id="s-reset-day" style="width:100%;margin-top:9px">Azzera il giro di oggi</button>' +
       '<button class="btn" id="s-update" style="width:100%;margin-top:9px">Forza aggiornamento app</button>' +
       '<button class="btn danger" id="s-wipe" style="width:100%;margin-top:9px">Cancella tutti i dati</button>' +
-      '<p class="hint">I dati stanno solo in questo telefono: se cancelli la cache del browser o cambi telefono, senza backup li perdi.</p>' +
+      '<p class="hint">I dati stanno solo in questo telefono: se cancelli la cache del browser o cambi telefono, senza backup li perdi. <b>Le foto delle consegne non entrano nel backup</b>: per tenerle, scaricale dalla foto stessa (⬇).</p>' +
       '<div class="section-t">Info</div>' +
       '<p class="hint">Versione <b>' + APP_BUILD + '</b> · mappa MapLibre + OpenFreeMap.<br>Base: OpenStreetMap + Valhalla (profilo camion, autostrade escluse). Con la chiave TomTom, percorso e tempi usano TomTom con <b>traffico live</b>, sempre con camion e autostrade escluse; se TomTom non risponde l’app torna da sola al calcolo senza traffico.<br><br>Il routing conosce altezza, larghezza, lunghezza e peso del mezzo, ma <b>non tutte le ordinanze locali, ZTL o divieti temporanei</b>: la segnaletica sul posto resta l’unica verità.</p>';
     openModal(html);
@@ -3119,6 +3333,13 @@
       else { fitAll(); }
     });
     $('#btn-alt').addEventListener('click', toggleAlt);
+    $('#btn-cam').addEventListener('click', () => {
+      const act = activeStops();
+      const ov = (Nav.active && Nav.overrideDest) ? Nav.overrideDest : null;
+      const st = ov ? (ov.id && S.giro ? S.giro.stops.find((s) => s.id === ov.id) : null) : act[0];
+      if (!st) { toast('Nessuna consegna da fotografare', 'bad'); return; }
+      openPhotos(st.id);
+    });
     $('#btn-offline').addEventListener('click', prepareOffline);
     $('#nb-refresh').addEventListener('click', () => {
       if (!Nav.active) return;
@@ -3154,6 +3375,7 @@
         if (act === 'nav') { openNavMenu(st); }
         if (act === 'skip') { toggleSkip(id); }
         if (act === 'edit') { openStopEditor(id, {}); }
+        if (act === 'photo') { openPhotos(id); }
         if (act === 'up') { moveStopBy(id, -1); }
         if (act === 'down') { moveStopBy(id, 1); }
         return;
@@ -3188,6 +3410,7 @@
 
     bind();
     initVoice();
+    refreshPhotoCounts().then(() => { if (S.giro) { renderStops(); updateEta(); } });
 
     if (S.me == null && 'geolocation' in navigator) {
       // posizione in background: silenziosa, serve per l'ETA alla prossima tappa
@@ -3217,7 +3440,7 @@
     if (bt) bt.textContent = APP_BUILD;
     // iOS: le voci arrivano in ritardo
     if ('speechSynthesis' in window) window.speechSynthesis.onvoiceschanged = () => { voiceIt = null; };
-    window.PasoMaps = { db: () => db, S: S, Nav: Nav, getMap: () => map, computePreview: computePreview, voice: { parse: parseVoiceCommand, run: runVoiceText } };
+    window.PasoMaps = { db: () => db, S: S, Nav: Nav, getMap: () => map, computePreview: computePreview, voice: { parse: parseVoiceCommand, run: runVoiceText }, photos: { open: openPhotos, counts: () => photoCounts, refresh: refreshPhotoCounts } };
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

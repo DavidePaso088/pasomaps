@@ -1,6 +1,17 @@
 {
   "builds": [
     {
+      "build": 49,
+      "date": "2026-11-20",
+      "changes": [
+        "Home: sotto i percorsi, la nota “in modalità libera le autostrade sono permesse”",
+        "Foto delle consegne: tasto 📷 in basso a destra e tasto 📷 in ogni tappa della lista",
+        "Scatti dal telefono o scegli dalla galleria, più foto per tappa, contatore in lista",
+        "Le foto restano solo sul telefono e non entrano nel backup; dalla foto puoi scaricarle",
+        "Eliminando una tappa o un giro si cancellano anche le sue foto"
+      ]
+    },
+    {
       "build": 48,
       "date": "2026-11-20",
       "changes": [
