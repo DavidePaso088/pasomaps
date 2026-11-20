@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css">
-<link rel="stylesheet" href="css/app.css?v=44">
+<link rel="stylesheet" href="css/app.css?v=45">
 </head>
 <body>
 
@@ -47,7 +47,6 @@
     <div class="map-top">
       <button class="icon-btn onmap" id="btn-back" aria-label="Indietro">‹</button>
       <div class="map-title"><b id="giro-name">—</b><span id="giro-city">—</span></div>
-      <button class="icon-btn onmap" id="btn-mic" aria-label="Comandi vocali" title="Comandi vocali">🎤</button>
       <button class="icon-btn onmap" id="btn-offline" aria-label="Prepara offline" title="Prepara offline">⬇</button>
       <button class="icon-btn onmap" id="btn-alt" aria-label="Percorso alternativo">⇄</button>
       <button class="icon-btn onmap" id="btn-recenter" aria-label="Centra sulla mia posizione">◎</button>
@@ -67,6 +66,7 @@
       <div class="eta-sub"><span id="eta-km">-- km</span><span class="sep">·</span><span id="eta-arr">--:--</span></div>
       <div class="eta-stop" id="eta-stop">nessuna tappa</div>
     </div>
+    <button id="btn-mic" class="mic-fab" aria-label="Comandi vocali" title="Comandi vocali">🎤</button>
     <button id="btn-nav" class="nav-fab" aria-label="Naviga">➤</button>
     <button id="btn-sheet" class="fab">
       <span class="fab-ic">☰</span><span>Tappe</span>
@@ -119,6 +119,6 @@
 <div id="update-bar" hidden><div class="ub-title">Nuova versione pronta — tocca per aggiornare</div></div>
 
 <script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
-<script src="js/app.js?v=46"></script>
+<script src="js/app.js?v=47"></script>
 </body>
 </html>

@@ -1,6 +1,14 @@
 {
   "builds": [
     {
+      "build": 47,
+      "date": "2026-11-20",
+      "changes": [
+        "Microfono spostato in basso a sinistra, sopra il tasto di navigazione",
+        "La barra in alto ha più spazio per il nome del giro"
+      ]
+    },
+    {
       "build": 46,
       "date": "2026-11-20",
       "changes": [

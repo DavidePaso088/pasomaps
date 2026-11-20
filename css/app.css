@@ -232,6 +232,14 @@ b,strong{font-weight:700}
 }
 .nav-fab:active{transform:scale(.95)}
 .nav-fab.stop{color:#fff;background:linear-gradient(150deg,#ef4444,#b91c1c);box-shadow:0 12px 28px rgba(239,68,68,.35)}
+.mic-fab{
+  position:absolute;left:12px;bottom:calc(80px + var(--safe-b));
+  width:58px;height:58px;border-radius:50%;display:grid;place-items:center;font-size:22px;
+  background:rgba(15,23,42,.92);border:1px solid rgba(34,211,238,.45);color:#d9f7ff;
+  box-shadow:0 10px 24px rgba(0,0,0,.45);backdrop-filter:blur(10px);
+}
+.mic-fab:active{transform:scale(.95)}
+.mic-fab.listening{background:rgba(239,68,68,.3);border-color:rgba(239,68,68,.7);box-shadow:0 0 0 6px rgba(239,68,68,.15),0 10px 24px rgba(0,0,0,.45)}
 
 /* ---------- sheet tappe ---------- */
 .sheet-bg{
@@ -386,7 +394,8 @@ b,strong{font-weight:700}
 #voice-bar .vb-text b{display:block;font-size:13px;color:#eaf1ff;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #voice-bar .vb-text span{display:block;font-size:10px;color:#8fa1bd;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .vb-x{width:32px;height:32px;border-radius:9px;background:rgba(255,255,255,.06);border:1px solid var(--line);color:#cfe0f7;flex:0 0 auto}
-#btn-mic.listening{background:rgba(239,68,68,.25);border-color:rgba(239,68,68,.6);color:#ffd4d4}
+#btn-mic.listening{background:rgba(239,68,68,.3);border-color:rgba(239,68,68,.7)}
+
 .toast{
   max-width:min(92%,420px);padding:11px 15px;border-radius:14px;font-size:12.5px;line-height:1.4;
   background:rgba(16,26,44,.97);border:1px solid rgba(96,165,250,.35);color:#e6f0ff;
