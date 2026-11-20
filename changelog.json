@@ -4,6 +4,9 @@
       "build": 51,
       "date": "2026-11-20",
       "changes": [
+        "⚠ IMPORTANTE: eliminando una tappa o un giro si cancellano anche le sue foto, e non si recuperano",
+        "Se una foto ti serve come prova, scaricala prima con ⬇ dalla foto stessa",
+        "Quando confermi l'eliminazione, l'avviso dice quante foto stai buttando",
         "Sistemata la frase di avviso quando la tappa o il giro ha una sola foto"
       ]
     },
