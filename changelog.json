@@ -1,6 +1,16 @@
 {
   "builds": [
     {
+      "build": 61,
+      "date": "2026-11-20",
+      "changes": [
+        "“Incolla coordinate”: la posizione incollata diventa un pin a mano e nessun ricalcolo la sovrascrive",
+        "Accetta virgola o punto; se latitudine e longitudine sono invertite le rimette a posto",
+        "Se le coordinate sono a più di 300 km dalle altre tappe chiede conferma (errore di battitura o coordinate scambiate)",
+        "Nella lista le tappe con posizione impostata a mano mostrano 📍 accanto all'indirizzo"
+      ]
+    },
+    {
       "build": 59,
       "date": "2026-11-20",
       "changes": [

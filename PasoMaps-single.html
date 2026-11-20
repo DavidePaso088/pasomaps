@@ -300,6 +300,7 @@ b,strong{font-weight:700}
 .stop-out.ok,.stop-out.paid{color:#8ff0b1}
 .stop-out.unpaid,.stop-out.absent{color:#ffd9a8}
 .stop-out.failed{color:#ffb4b4}
+.pin-ok{font-size:10.5px;opacity:.9;vertical-align:1px}
 .sheet-tip.sum{color:#a9f0ff;font-weight:700;margin-top:-3px}
 .out-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .out-grid button{
@@ -2037,7 +2038,7 @@ b,strong{font-weight:700}
         '<div class="stop-idx">' + (done ? '✓' : skipped ? '–' : idx) + '</div>' +
         '<div class="stop-main" data-center="' + st.id + '">' +
         '<div class="stop-name">' + esc(st.name || 'Tappa ' + idx) + '</div>' +
-        '<div class="stop-addr">' + esc(st.address || '') + '</div>' +
+        '<div class="stop-addr">' + esc(st.address || '') + (st.pinned && hasCoords(st) ? ' <span class="pin-ok" title="posizione impostata a mano">📍</span>' : '') + '</div>' +
         (st.approx ? '<div class="stop-note" style="color:#ffc98b">civico approssimato · verifica il pin</div>' : '') +
         (st.notes ? '<div class="stop-note">' + esc(st.notes) + '</div>' : '') +
         (oc ? '<div class="stop-out ' + esc((OUTCOMES[oc.code] || {}).cls || '') + '">' + esc(outcomeLong(oc)) + '</div>' : '') +
@@ -2465,13 +2466,32 @@ b,strong{font-weight:700}
       }, () => toast('Posizione non disponibile: controlla i permessi', 'bad'), { enableHighAccuracy: true, timeout: 20000 });
     });
     $('#f-paste').addEventListener('click', () => {
-      const v = prompt('Incolla coordinate o link Google Maps:');
+      const v = prompt('Incolla le coordinate (es. 43.86123, 10.24011) oppure un link Google Maps con @lat,lng:');
       if (!v) return;
-      const m = v.match(/(-?\d{1,3}[.,]\d{3,})[ ,;]+(-?\d{1,3}[.,]\d{3,})/) || v.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+      const m = v.match(/(-?\d{1,3}[.,]\d{3,})\s*[ ,;]\s*(-?\d{1,3}[.,]\d{3,})/) || v.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
       if (!m) { toast('Coordinate non riconosciute', 'bad'); return; }
-      const lat = parseFloat(String(m[1]).replace(',', '.')), lng = parseFloat(String(m[2]).replace(',', '.'));
+      let lat = parseFloat(String(m[1]).replace(',', '.'));
+      let lng = parseFloat(String(m[2]).replace(',', '.'));
       if (!isFinite(lat) || !isFinite(lng)) { toast('Coordinate non valide', 'bad'); return; }
+      if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) {
+        const t = lat; lat = lng; lng = t;
+        toast('Erano invertite: le ho rimesse a posto', 'good');
+      }
+      if (Math.abs(lat) > 90 || Math.abs(lng) > 180) { toast('Coordinate fuori scala: controlla i numeri', 'bad'); return; }
+      const others = S.giro.stops.filter((s) => hasCoords(s) && s.id !== draft.id);
+      if (others.length) {
+        const near = Math.min.apply(null, others.map((s) => hav(s, { lat: lat, lng: lng })));
+        if (near > 300000 && !confirm('Queste coordinate sono a ' + Math.round(near / 1000) + ' km dalle altre tappe del giro.\nSalvarle lo stesso?')) return;
+      }
       setCoords(lat, lng, '');
+      draft.pinned = true;
+      draft.approx = false;
+      const civic = $('#f-civic');
+      if (civic) {
+        civic.style.display = '';
+        civic.textContent = 'Coordinate incollate a mano: il percorso arriva qui e nessun ricalcolo le cambia.';
+      }
+      vibrate(15);
     });
     $$('#f-chips button').forEach((b) => b.addEventListener('click', () => {
       const ta = $('#f-notes');
