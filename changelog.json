@@ -1,6 +1,13 @@
 {
   "builds": [
     {
+      "build": 51,
+      "date": "2026-11-20",
+      "changes": [
+        "Sistemata la frase di avviso quando la tappa o il giro ha una sola foto"
+      ]
+    },
+    {
       "build": 50,
       "date": "2026-11-20",
       "changes": [

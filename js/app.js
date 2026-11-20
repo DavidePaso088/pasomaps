@@ -1799,9 +1799,11 @@
     $('#m-cancel').addEventListener('click', closeModal);
     if ($('#f-del')) $('#f-del').addEventListener('click', () => {
       const pn = photoCounts[st.id] || 0;
-      if (!confirm(pn
-        ? 'Eliminare questa tappa e le sue ' + pn + (pn === 1 ? ' foto? La foto non si recupera.' : ' foto? Le foto non si recuperano.')
-        : 'Eliminare definitivamente questa tappa dal giro?')) return;
+      if (!confirm(!pn
+        ? 'Eliminare definitivamente questa tappa dal giro?'
+        : (pn === 1
+          ? 'Eliminare questa tappa e la sua foto? La foto non si recupera.'
+          : 'Eliminare questa tappa e le sue ' + pn + ' foto? Le foto non si recuperano.'))) return;
       PhotoStore.delStop(st.id).catch(() => { });
       delete photoCounts[st.id];
       S.giro.stops = S.giro.stops.filter((x) => x.id !== st.id);
@@ -2493,7 +2495,9 @@
     if ($('#g-del')) $('#g-del').addEventListener('click', () => {
       const pn = (g.stops || []).reduce((a, s) => a + (photoCounts[s.id] || 0), 0);
       if (!confirm('Eliminare il giro “' + g.name + '” con tutte le sue tappe?' +
-        (pn ? ' Si cancellano anche le ' + pn + (pn === 1 ? ' foto della consegna: non si recupera.' : ' foto delle consegne: non si recuperano.') : ''))) return;
+        (!pn ? '' : (pn === 1
+          ? ' Si cancella anche la sua foto: non si recupera.'
+          : ' Si cancellano anche le ' + pn + ' foto delle consegne: non si recuperano.')))) return;
       (g.stops || []).forEach((s) => { PhotoStore.delStop(s.id).catch(() => { }); delete photoCounts[s.id]; });
       db.giri = db.giri.filter((x) => x.id !== g.id);
       Object.keys(db.sessions || {}).forEach((k) => { if (k.indexOf(g.id + '|') === 0) delete db.sessions[k]; });
