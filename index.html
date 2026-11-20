@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css">
-<link rel="stylesheet" href="css/app.css?v=50">
+<link rel="stylesheet" href="css/app.css?v=51">
 </head>
 <body>
 
@@ -87,14 +87,13 @@
       <button class="chip" id="btn-close-sheet" aria-label="Chiudi">✕</button>
     </div>
   </div>
-  <div class="sheet-tip">Tieni premuto su una tappa per spostarla · oppure usa le frecce ↑ ↓</div>
+  <div class="sheet-tip">Tieni premuto su una tappa per spostarla</div>
   <div class="sheet-tip sum" id="sheet-sum" hidden></div>
   <div class="sheet-body" id="sheet-body">
     <div class="stops" id="stops-list"></div>
     <div class="sheet-foot">
       <button class="btn-wide" id="btn-save">Salva percorso</button>
       <button class="btn-ghost" id="btn-retry" style="display:none;padding:11px;margin-top:8px">Riprova indirizzi mancanti</button>
-      <button class="btn-ghost" id="btn-optimize" style="padding:11px">⇅ Riordina per vicinanza</button>
     </div>
   </div>
 </div>
@@ -121,6 +120,6 @@
 <div id="update-bar" hidden><div class="ub-title">Nuova versione pronta — tocca per aggiornare</div></div>
 
 <script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
-<script src="js/app.js?v=57"></script>
+<script src="js/app.js?v=58"></script>
 </body>
 </html>

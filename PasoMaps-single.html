@@ -356,8 +356,13 @@ b,strong{font-weight:700}
   box-shadow:0 14px 30px rgba(0,0,0,.55);transform:scale(1.01);
   position:relative;z-index:5;
 }
-.sheet-tip{font-size:10.5px;color:#7c8ea9;padding:0 16px 7px;letter-spacing:.2px}
-.stop-idx{
+.stop-item.flash{animation:flashIn 1.4s ease-out}
+@keyframes flashIn{
+  0%{border-color:rgba(34,211,238,.95);box-shadow:0 0 0 0 rgba(34,211,238,.5)}
+  70%{border-color:rgba(34,211,238,.6);box-shadow:0 0 0 10px rgba(34,211,238,0)}
+  100%{border-color:var(--line);box-shadow:none}
+}
+.sheet-tip{font-size:10.5px;color:#7c8ea9;padding:0 16px 7px;letter-spacing:.2px}.stop-idx{
   width:27px;height:27px;border-radius:9px;flex:0 0 auto;display:grid;place-items:center;
   font-size:12.5px;font-weight:700;background:rgba(255,255,255,.07);color:#c7d8ef;border:1px solid var(--line)
 }
@@ -581,14 +586,13 @@ b,strong{font-weight:700}
       <button class="chip" id="btn-close-sheet" aria-label="Chiudi">✕</button>
     </div>
   </div>
-  <div class="sheet-tip">Tieni premuto su una tappa per spostarla · oppure usa le frecce ↑ ↓</div>
+  <div class="sheet-tip">Tieni premuto su una tappa per spostarla</div>
   <div class="sheet-tip sum" id="sheet-sum" hidden></div>
   <div class="sheet-body" id="sheet-body">
     <div class="stops" id="stops-list"></div>
     <div class="sheet-foot">
       <button class="btn-wide" id="btn-save">Salva percorso</button>
       <button class="btn-ghost" id="btn-retry" style="display:none;padding:11px;margin-top:8px">Riprova indirizzi mancanti</button>
-      <button class="btn-ghost" id="btn-optimize" style="padding:11px">⇅ Riordina per vicinanza</button>
     </div>
   </div>
 </div>
@@ -1972,11 +1976,12 @@ b,strong{font-weight:700}
   }
 
   /* =============================== K. SHEET TAPPE =============================== */
-  function openSheet() {
+  function openSheet(opts) {
+    opts = opts || {};
     $('#sheet').classList.add('on');
     $('#sheet-bg').classList.add('on');
     pushState('sheet');
-    scrollToCurrent();
+    if (!opts.noScroll) scrollToCurrent();
   }
   function closeSheet(touchHistory) {
     const wasOpen = $('#sheet').classList.contains('on');
@@ -3181,7 +3186,14 @@ b,strong{font-weight:700}
     }
     S.giro.stops.push({ id: uid(), name: '', address: q, lat: res.best.lat, lng: res.best.lng, notes: '', approx: !!res.approx });
     saveDB();
+    if (!$('#sheet').classList.contains('on')) openSheet({ noScroll: true });
     renderStops({ scroll: 'bottom' });
+    setTimeout(() => {
+      const b = $('#sheet-body');
+      if (b) b.scrollTop = b.scrollHeight;
+      const last = document.querySelector('#stops-list .stop-item:last-child');
+      if (last) { last.classList.add('flash'); setTimeout(() => last.classList.remove('flash'), 1400); }
+    }, 380);
     drawMarkers(); renderGiroChrome(); computePreview(false); updateEta();
     toast('Aggiunta: ' + q, 'good');
     speak('Aggiunta ' + q);
@@ -4055,29 +4067,6 @@ b,strong{font-weight:700}
     saveDB(); renderStops(); drawMarkers(); renderGiroChrome(); updateEta(); computePreview(true);
   }
 
-  function optimizeOrder() {
-    const act = activeStops();
-    if (act.length < 3) { toast('Servono almeno 3 tappe da fare', 'bad'); return; }
-    const fixed = S.giro.stops.filter((s) => act.indexOf(s) === -1);
-    let start = S.me || stopPoint(act[0]);
-    const left = act.slice();
-    const ordered = [];
-    while (left.length) {
-      let bi = 0, bd = Infinity;
-      left.forEach((s, i) => { const d = hav(start, stopPoint(s)); if (d < bd) { bd = d; bi = i; } });
-      const [nx] = left.splice(bi, 1);
-      ordered.push(nx);
-      start = stopPoint(nx);
-    }
-    // reinserisce le tappe fatte/saltate nelle posizioni originali
-    const result = [];
-    let k = 0;
-    S.giro.stops.forEach((s) => { result.push(fixed.indexOf(s) !== -1 ? s : ordered[k++]); });
-    S.giro.stops = result;
-    saveDB(); renderStops(); drawMarkers(); computePreview(true);
-    toast('Tappe riordinate per vicinanza', 'good');
-  }
-
   async function toggleAlt() {
     const stops = activeStops();
     if (!stops.length) { toast('Nessuna tappa', 'bad'); return; }
@@ -4216,7 +4205,6 @@ b,strong{font-weight:700}
       computePreview(false);
       vibrate(15);
     });
-    $('#btn-optimize').addEventListener('click', optimizeOrder);
     $('#btn-retry').addEventListener('click', retryMissing);
     $('#btn-recenter').addEventListener('click', () => {
       if (S.me) { map.easeTo({ center: [S.me.lng, S.me.lat], zoom: Math.max(map.getZoom(), 16), pitch: 0, bearing: 0, duration: 500 }); S.follow = true; }

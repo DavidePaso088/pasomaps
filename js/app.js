@@ -1354,11 +1354,12 @@
   }
 
   /* =============================== K. SHEET TAPPE =============================== */
-  function openSheet() {
+  function openSheet(opts) {
+    opts = opts || {};
     $('#sheet').classList.add('on');
     $('#sheet-bg').classList.add('on');
     pushState('sheet');
-    scrollToCurrent();
+    if (!opts.noScroll) scrollToCurrent();
   }
   function closeSheet(touchHistory) {
     const wasOpen = $('#sheet').classList.contains('on');
@@ -2563,7 +2564,14 @@
     }
     S.giro.stops.push({ id: uid(), name: '', address: q, lat: res.best.lat, lng: res.best.lng, notes: '', approx: !!res.approx });
     saveDB();
+    if (!$('#sheet').classList.contains('on')) openSheet({ noScroll: true });
     renderStops({ scroll: 'bottom' });
+    setTimeout(() => {
+      const b = $('#sheet-body');
+      if (b) b.scrollTop = b.scrollHeight;
+      const last = document.querySelector('#stops-list .stop-item:last-child');
+      if (last) { last.classList.add('flash'); setTimeout(() => last.classList.remove('flash'), 1400); }
+    }, 380);
     drawMarkers(); renderGiroChrome(); computePreview(false); updateEta();
     toast('Aggiunta: ' + q, 'good');
     speak('Aggiunta ' + q);
@@ -3437,29 +3445,6 @@
     saveDB(); renderStops(); drawMarkers(); renderGiroChrome(); updateEta(); computePreview(true);
   }
 
-  function optimizeOrder() {
-    const act = activeStops();
-    if (act.length < 3) { toast('Servono almeno 3 tappe da fare', 'bad'); return; }
-    const fixed = S.giro.stops.filter((s) => act.indexOf(s) === -1);
-    let start = S.me || stopPoint(act[0]);
-    const left = act.slice();
-    const ordered = [];
-    while (left.length) {
-      let bi = 0, bd = Infinity;
-      left.forEach((s, i) => { const d = hav(start, stopPoint(s)); if (d < bd) { bd = d; bi = i; } });
-      const [nx] = left.splice(bi, 1);
-      ordered.push(nx);
-      start = stopPoint(nx);
-    }
-    // reinserisce le tappe fatte/saltate nelle posizioni originali
-    const result = [];
-    let k = 0;
-    S.giro.stops.forEach((s) => { result.push(fixed.indexOf(s) !== -1 ? s : ordered[k++]); });
-    S.giro.stops = result;
-    saveDB(); renderStops(); drawMarkers(); computePreview(true);
-    toast('Tappe riordinate per vicinanza', 'good');
-  }
-
   async function toggleAlt() {
     const stops = activeStops();
     if (!stops.length) { toast('Nessuna tappa', 'bad'); return; }
@@ -3598,7 +3583,6 @@
       computePreview(false);
       vibrate(15);
     });
-    $('#btn-optimize').addEventListener('click', optimizeOrder);
     $('#btn-retry').addEventListener('click', retryMissing);
     $('#btn-recenter').addEventListener('click', () => {
       if (S.me) { map.easeTo({ center: [S.me.lng, S.me.lat], zoom: Math.max(map.getZoom(), 16), pitch: 0, bearing: 0, duration: 500 }); S.follow = true; }

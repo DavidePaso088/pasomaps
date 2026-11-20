@@ -1,6 +1,15 @@
 {
   "builds": [
     {
+      "build": 58,
+      "date": "2026-11-20",
+      "changes": [
+        "Comando vocale “aggiungi via …”: dopo l'aggiunta si apre la lista tappe e scorre in fondo, con la nuova tappa evidenziata",
+        "Tolto “⇅ Riordina per vicinanza”: l'ordine delle tappe resta quello che decidi tu",
+        "Per spostare una tappa: pressione lunga e trascinamento, oppure “↑ Rendi prossima tappa” nella scheda"
+      ]
+    },
+    {
       "build": 57,
       "date": "2026-11-20",
       "changes": [
