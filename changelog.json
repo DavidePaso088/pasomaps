@@ -4,7 +4,12 @@
       "build": 46,
       "date": "2026-11-20",
       "changes": [
-        "Corretto il comando “aggiungi via …”: ora cerca l'indirizzo completo, senza perdere “via”"
+        "Comandi vocali: tocca 🎤 sulla mappa e parla",
+        "“aggiungi via Roma 1” aggiunge la tappa al giro",
+        "“portami a via Mazzini 10” avvia la navigazione (anche verso indirizzi fuori giro)",
+        "“salta”, “ferma”, “quanto manca”, “apri tappe”",
+        "Corretto: “aggiungi via …” cerca l'indirizzo completo, senza perdere “via”",
+        "Serve Chrome su Android e il permesso microfono"
       ]
     },
     {
