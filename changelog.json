@@ -1,6 +1,13 @@
 {
   "builds": [
     {
+      "build": 46,
+      "date": "2026-11-20",
+      "changes": [
+        "Corretto il comando “aggiungi via …”: ora cerca l'indirizzo completo, senza perdere “via”"
+      ]
+    },
+    {
       "build": 45,
       "date": "2026-11-20",
       "changes": [

@@ -2071,8 +2071,12 @@
     if (/\b(chiudi|annulla)\b/.test(t) && /\btappe\b/.test(t)) return { intent: 'closesheet' };
     let m = t.match(/\b(?:portami|porta mi|naviga|vai|guidami)\b(?:\s+(?:a|verso|in|alla|al|da))?\s+(.+?)\s*$/);
     if (m) return { intent: 'navigate', query: m[1].replace(/^(a|verso|in|alla|al|da)\s+/, '').trim() };
-    m = t.match(/\b(?:aggiungi|inserisci|nuova|nuovo|crea)\b(?:\s+(?:una|un|la|il))?\s*(?:(?:via|viale|piazza|piazzale|corso|strada|largo|vicolo)\b)?\s*(.*)$/);
-    if (m) return { intent: 'add', query: m[1].trim() };
+    m = t.match(/\b(?:aggiungi|inserisci|nuova|nuovo|crea)\b(?:\s+(?:una|un|la|il))?\s*(.+)$/);
+    if (m) {
+      let q = m[1].trim();
+      if (/^(via|viale|piazza|piazzale|corso|strada|largo|vicolo|indirizzo|tappa|consegna|cliente)$/i.test(q)) q = '';
+      return { intent: 'add', query: q };
+    }
     if (STREET_RE.test(t.trim())) return { intent: 'add', query: t.trim() };
     return { intent: 'unknown', query: '' };
   }
