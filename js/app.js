@@ -601,7 +601,7 @@
     pendingCompute: false,
     pendingStop: null
   };
-  const Nav = { active: false, watchId: null, route: null, busy: false, offCount: 0, spoken: {}, target: null };
+  const Nav = { active: false, watchId: null, route: null, busy: false, offCount: 0, spoken: {}, target: null, overrideDest: null };
 
   const hasCoords = (s) => !!s && s.lat != null && s.lng != null && isFinite(+s.lat) && isFinite(+s.lng);
 
@@ -978,7 +978,7 @@
   }
 
   function saveNavCache(leg) {
-    if (!S.giro || !leg || !leg.dest || !leg.coords || leg.coords.length < 2) return;
+    if (!S.giro || !leg || !leg.dest || !leg.dest.id || !leg.coords || leg.coords.length < 2) return;
     try {
       const payload = {
         at: Date.now(),
@@ -1073,8 +1073,9 @@
   /* =============================== J. ETA =============================== */
   function updateEta() {
     const act = activeStops();
+    const ov = (Nav.active && Nav.overrideDest) ? Nav.overrideDest : null;
     $('#fab-badge').textContent = act.length;
-    if (!act.length) {
+    if (!act.length && !ov) {
       const any = S.giro && S.giro.stops ? S.giro.stops.length : 0;
       const noPos = (S.giro && S.giro.stops) ? S.giro.stops.filter((s) => !hasCoords(s)).length : 0;
       if (!any) {
@@ -1109,7 +1110,7 @@
     if (sep2) sep2.style.display = '';
     $('#btn-nav').disabled = false;
     $('#btn-nav').style.opacity = '1';
-    const st = act[0];
+    const st = ov || act[0];
     $('#eta-stop').textContent = st.name || st.address || 'Tappa';
     let km = null, sec = null, label = 'Prossima tappa';
 
@@ -1713,7 +1714,8 @@
   function startNav() {
     if (!('geolocation' in navigator)) { toast('GPS non disponibile su questo browser', 'bad'); return; }
     const act = activeStops();
-    if (!act.length) { toast('Nessuna tappa da raggiungere', 'bad'); return; }
+    const dest = Nav.overrideDest || act[0] || null;
+    if (!dest) { toast('Nessuna tappa da raggiungere', 'bad'); return; }
     if (db.settings.ztlWarn !== false) {
       const city = (S.giro && S.giro.city) ? S.giro.city.trim() : '';
       if (city) {
@@ -1731,12 +1733,13 @@
       Nav.watchId = navigator.geolocation.watchPosition(onFix, onFixErr, { enableHighAccuracy: true, maximumAge: 2000, timeout: 25000 });
     } catch (e) { toast('GPS non avviato', 'bad'); stopNav(); return; }
     if (S.me) refreshNavRoute();
-    speak('Navigazione avviata verso ' + (act[0].name || 'la prossima tappa'));
+    speak('Navigazione avviata verso ' + (dest.name || dest.address || 'la prossima tappa'));
     toast('Navigazione avviata · solo strade senza autostrada', 'good');
   }
 
   function stopNav(silent) {
     Nav.active = false;
+    Nav.overrideDest = null;
     keepAwake(false);
     if (Nav.watchId != null) { try { navigator.geolocation.clearWatch(Nav.watchId); } catch (e) { } Nav.watchId = null; }
     Nav.route = null; Nav.busy = false;
@@ -1812,9 +1815,8 @@
 
   async function refreshNavRoute() {
     if (Nav.busy) return;
-    const act = activeStops();
-    if (!act.length || !S.me) return;
-    const dest = act[0];
+    const dest = Nav.overrideDest || activeStops()[0] || null;
+    if (!dest || !S.me) return;
     Nav.busy = true;
     try {
       const r = await routePoints([stopPoint(S.me), stopPoint(dest)]);
@@ -1919,6 +1921,19 @@
   function navKey(i, k) { return i + ':' + k; }
 
   function arrive() {
+    if (Nav.overrideDest) {
+      const d = Nav.overrideDest;
+      Nav.overrideDest = null;
+      stopNav();
+      if (d.id && S.giro) {
+        const st = S.giro.stops.find((x) => x.id === d.id);
+        if (st) { S.session.done[st.id] = Date.now(); saveDB(); renderStops(); drawMarkers(); renderGiroChrome(); }
+      }
+      toast('Arrivato: ' + (d.name || d.address || 'destinazione'), 'good');
+      speak('Sei arrivato');
+      updateEta(); computePreview(true);
+      return;
+    }
     const act = activeStops();
     const st = act[0];
     if (!st) { stopNav(); return; }
@@ -1980,6 +1995,183 @@
     try { window.location.href = geo; }
     catch (e) { window.open('https://osmand.net/map/?pin=' + coords, '_blank'); }
   }
+
+  /* ---------- comandi vocali (push-to-talk) ---------- */
+  const SRClass = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null, listeningVoice = false, voiceFinalText = '';
+
+  function initVoice() {
+    const btn = $('#btn-mic');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      if (!SRClass) { toast('Comandi vocali non supportati: usa Chrome su Android', 'bad'); return; }
+      if (listeningVoice) stopVoice(); else startVoice();
+    });
+    const x = $('#voice-cancel');
+    if (x) x.addEventListener('click', stopVoice);
+  }
+
+  function startVoice() {
+    if (listeningVoice) return;
+    voiceFinalText = '';
+    try { window.speechSynthesis.cancel(); } catch (e) { }
+    try {
+      rec = new SRClass();
+      rec.lang = 'it-IT';
+      rec.interimResults = true;
+      rec.continuous = false;
+      rec.maxAlternatives = 1;
+      rec.onstart = () => {
+        listeningVoice = true;
+        $('#voice-bar').hidden = false;
+        $('#voice-heard').textContent = 'Ti ascolto…';
+        $('#btn-mic').classList.add('listening');
+      };
+      rec.onresult = (e) => {
+        let interim = '', final = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const tr = e.results[i][0].transcript;
+          if (e.results[i].isFinal) final += tr; else interim += tr;
+        }
+        if (final) voiceFinalText = final.trim();
+        $('#voice-heard').textContent = (final || interim).trim() || 'Ti ascolto…';
+      };
+      rec.onerror = (e) => {
+        const m = {
+          'not-allowed': 'Microfono non autorizzato: concedi il permesso',
+          'no-speech': 'Non ho sentito niente',
+          'audio-capture': 'Microfono non disponibile',
+          'network': 'Riconoscimento non disponibile: serve la rete'
+        };
+        toast(m[e.error] || ('Microfono: ' + e.error), 'bad');
+      };
+      rec.onend = () => {
+        listeningVoice = false;
+        $('#btn-mic').classList.remove('listening');
+        setTimeout(() => { const b = $('#voice-bar'); if (b) b.hidden = true; }, 800);
+        if (voiceFinalText) runVoiceText(voiceFinalText);
+      };
+      rec.start();
+    } catch (e) { toast('Microfono non avviato', 'bad'); }
+  }
+
+  function stopVoice() {
+    listeningVoice = false;
+    if (rec) { try { rec.stop(); } catch (e) { } }
+    const b = $('#voice-bar'); if (b) b.hidden = true;
+    const btn = $('#btn-mic'); if (btn) btn.classList.remove('listening');
+  }
+
+  function parseVoiceCommand(raw) {
+    const t = ' ' + String(raw || '').toLowerCase().replace(/[.,!?;]/g, ' ').replace(/\s+/g, ' ').trim() + ' ';
+    if (/\b(salta|salta tappa|salta consegna|prossima tappa)\b/.test(t)) return { intent: 'skip' };
+    if (/\b(ferma|stop|interrompi)\b/.test(t) && /\b(navigazione|naviga|percorso)\b/.test(t)) return { intent: 'stop' };
+    if (/\b(quanto manca|quanto tempo|tempo rimasto)\b/.test(t)) return { intent: 'eta' };
+    if (/\b(apri|mostra)\b/.test(t) && /\btappe\b/.test(t)) return { intent: 'sheet' };
+    if (/\b(chiudi|annulla)\b/.test(t) && /\btappe\b/.test(t)) return { intent: 'closesheet' };
+    let m = t.match(/\b(?:portami|porta mi|naviga|vai|guidami)\b(?:\s+(?:a|verso|in|alla|al|da))?\s+(.+?)\s*$/);
+    if (m) return { intent: 'navigate', query: m[1].replace(/^(a|verso|in|alla|al|da)\s+/, '').trim() };
+    m = t.match(/\b(?:aggiungi|inserisci|nuova|nuovo|crea)\b(?:\s+(?:una|un|la|il))?\s*(?:(?:via|viale|piazza|piazzale|corso|strada|largo|vicolo)\b)?\s*(.*)$/);
+    if (m) return { intent: 'add', query: m[1].trim() };
+    if (STREET_RE.test(t.trim())) return { intent: 'add', query: t.trim() };
+    return { intent: 'unknown', query: '' };
+  }
+
+  async function runVoiceText(text) {
+    const cmd = parseVoiceCommand(text);
+    toast('“' + text + '”', 'good');
+    if (cmd.intent === 'unknown') {
+      toast('Non ho capito. Prova: “aggiungi via Roma 1” o “portami a via Roma 1”', 'bad');
+      speak('Non ho capito');
+      return;
+    }
+    if (!S.giro) { toast('Apri prima un giro', 'bad'); return; }
+    if (cmd.intent === 'skip') {
+      if (Nav.active && Nav.overrideDest) { toast('Stai andando a una destinazione libera: usa “ferma”', 'bad'); return; }
+      if (Nav.active) skipCurrentNav();
+      else {
+        const a = activeStops()[0];
+        if (a) { toggleSkip(a.id); speak('Tappa saltata'); }
+        else toast('Nessuna tappa', 'bad');
+      }
+      return;
+    }
+    if (cmd.intent === 'stop') {
+      if (Nav.active) { stopNav(); speak('Navigazione fermata'); }
+      else toast('Navigazione non attiva', 'bad');
+      return;
+    }
+    if (cmd.intent === 'eta') {
+      const t = ($('#eta-time').textContent || '') + ' ' + ($('#eta-unit').textContent || '');
+      const s = $('#eta-stop').textContent || '';
+      toast('Mancano ' + t.trim() + ' per ' + s);
+      speak('Mancano ' + t.trim() + ' per ' + s);
+      return;
+    }
+    if (cmd.intent === 'sheet') { openSheet(); return; }
+    if (cmd.intent === 'closesheet') { closeSheet(); return; }
+    if (cmd.intent === 'add') {
+      if (!cmd.query) { toast('Dimmi la via: “aggiungi via Roma 1”', 'bad'); speak('Dimmi la via'); return; }
+      await voiceAddStop(cmd.query);
+      return;
+    }
+    if (cmd.intent === 'navigate') {
+      if (!cmd.query) { toast('Dimmi dove: “portami a via Roma 1”', 'bad'); speak('Dimmi dove'); return; }
+      await voiceNavigate(cmd.query);
+    }
+  }
+
+  function voiceZone() {
+    const z = (S.giro && (S.giro.city || (!GIRO_RE.test(S.giro.name) ? S.giro.name : ''))) || '';
+    return z.trim();
+  }
+
+  async function voiceAddStop(q) {
+    const z = voiceZone();
+    const center = z ? await resolveZone(z) : null;
+    const city = center && center.city ? center.city : z;
+    const query = q + ((city && q.toLowerCase().indexOf(city.toLowerCase()) === -1) ? ', ' + city : '');
+    toast('Cerco “' + q + '”…');
+    const res = await geocodeWithVariants(query, center, city);
+    if (!res.best) {
+      toast('Non trovo “' + q + '”: cercala a mano con + Aggiungi', 'bad');
+      speak('Non trovo ' + q);
+      return;
+    }
+    S.giro.stops.push({ id: uid(), name: '', address: q, lat: res.best.lat, lng: res.best.lng, notes: '', approx: !!res.approx });
+    saveDB();
+    renderStops({ scroll: 'bottom' });
+    drawMarkers(); renderGiroChrome(); computePreview(false); updateEta();
+    toast('Aggiunta: ' + q, 'good');
+    speak('Aggiunta ' + q);
+  }
+
+  async function voiceNavigate(q) {
+    const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9àèéìòù ]/g, ' ').replace(/\s+/g, ' ').trim();
+    const nq = norm(q);
+    let dest = null;
+    if (nq.length >= 3) {
+      dest = S.giro.stops.find((s) => {
+        const addr = norm(s.address), nm = norm(s.name);
+        return (addr && addr.indexOf(nq) !== -1) || (nm && nm.indexOf(nq) !== -1) || (addr && nq.indexOf(addr) !== -1);
+      });
+    }
+    if (!dest) {
+      const z = voiceZone();
+      const center = z ? await resolveZone(z) : null;
+      const city = center && center.city ? center.city : z;
+      const query = q + ((city && q.toLowerCase().indexOf(city.toLowerCase()) === -1) ? ', ' + city : '');
+      toast('Cerco “' + q + '”…');
+      const res = await geocodeWithVariants(query, center, city);
+      if (!res.best) { toast('Non trovo “' + q + '”', 'bad'); speak('Non trovo ' + q); return; }
+      dest = { id: null, name: q, address: q, lat: res.best.lat, lng: res.best.lng, free: true };
+    }
+    if (Nav.active) stopNav();
+    Nav.overrideDest = dest;
+    startNav();
+    speak('Ti porto a ' + (dest.name || dest.address));
+  }
+
 
   /* =============================== N. MODALI =============================== */
   function openModal(html) {
@@ -2940,6 +3132,7 @@
     renderHome();
 
     bind();
+    initVoice();
 
     if (S.me == null && 'geolocation' in navigator) {
       // posizione in background: silenziosa, serve per l'ETA alla prossima tappa
@@ -2969,7 +3162,7 @@
     if (bt) bt.textContent = APP_BUILD;
     // iOS: le voci arrivano in ritardo
     if ('speechSynthesis' in window) window.speechSynthesis.onvoiceschanged = () => { voiceIt = null; };
-    window.PasoMaps = { db: () => db, S: S, Nav: Nav, getMap: () => map, computePreview: computePreview };
+    window.PasoMaps = { db: () => db, S: S, Nav: Nav, getMap: () => map, computePreview: computePreview, voice: { parse: parseVoiceCommand, run: runVoiceText } };
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

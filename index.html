@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css">
-<link rel="stylesheet" href="css/app.css?v=43">
+<link rel="stylesheet" href="css/app.css?v=44">
 </head>
 <body>
 
@@ -47,6 +47,7 @@
     <div class="map-top">
       <button class="icon-btn onmap" id="btn-back" aria-label="Indietro">‹</button>
       <div class="map-title"><b id="giro-name">—</b><span id="giro-city">—</span></div>
+      <button class="icon-btn onmap" id="btn-mic" aria-label="Comandi vocali" title="Comandi vocali">🎤</button>
       <button class="icon-btn onmap" id="btn-offline" aria-label="Prepara offline" title="Prepara offline">⬇</button>
       <button class="icon-btn onmap" id="btn-alt" aria-label="Percorso alternativo">⇄</button>
       <button class="icon-btn onmap" id="btn-recenter" aria-label="Centra sulla mia posizione">◎</button>
@@ -110,9 +111,14 @@
 </div></div>
 
 <div id="toasts"></div>
+<div id="voice-bar" hidden>
+  <span class="vb-dot"></span>
+  <div class="vb-text"><b id="voice-heard">Ti ascolto…</b><span>“aggiungi via Roma 1” · “portami a via Mazzini 10” · “salta” · “ferma”</span></div>
+  <button class="vb-x" id="voice-cancel" aria-label="Annulla">✕</button>
+</div>
 <div id="update-bar" hidden><div class="ub-title">Nuova versione pronta — tocca per aggiornare</div></div>
 
 <script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
-<script src="js/app.js?v=44"></script>
+<script src="js/app.js?v=45"></script>
 </body>
 </html>
