@@ -2559,6 +2559,7 @@
       '<button class="btn" id="s-import-list" style="width:100%;margin-top:9px">Importa elenco (testo/CSV)</button>' +
       '<button class="btn" id="s-reset-day" style="width:100%;margin-top:9px">Azzera il giro di oggi</button>' +
       '<button class="btn" id="s-update" style="width:100%;margin-top:9px">Forza aggiornamento app</button>' +
+      '<button class="btn" id="s-changelog" style="width:100%;margin-top:9px">📋 Cosa è cambiato (dalla build 40)</button>' +
       '<button class="btn danger" id="s-wipe" style="width:100%;margin-top:9px">Cancella tutti i dati</button>' +
       '<p class="hint">I dati stanno solo in questo telefono: se cancelli la cache del browser o cambi telefono, senza backup li perdi. <b>Le foto delle consegne non entrano nel backup</b>: per tenerle, scaricale dalla foto stessa (⬇).</p>' +
       '<div class="section-t">Info</div>' +
@@ -2611,6 +2612,7 @@
       location.replace(location.pathname + '?u=' + Date.now());
     });
     if ($('#s-import-list')) $('#s-import-list').addEventListener('click', () => { closeModal(); openImportModal(); });
+    if ($('#s-changelog')) $('#s-changelog').addEventListener('click', () => { closeModal(); openChangelog(); });
     const ttInput = $('#s-tt');
     if (ttInput) {
       ttInput.addEventListener('change', () => {
@@ -3300,9 +3302,36 @@
     if (!entry || !Array.isArray(entry.changes) || !entry.changes.length) return;
     openModal('<div class="modal-head"><b>Cosa è cambiato · build ' + cur + '</b><button class="x" id="n-close">✕</button></div>' +
       '<ul class="news-list">' + entry.changes.map((c) => '<li>' + esc(c) + '</li>').join('') + '</ul>' +
-      '<button class="btn primary" id="n-ok" style="width:100%;margin-top:14px">OK</button>');
+      '<button class="btn" id="n-all" style="width:100%;margin-top:9px">Vedi tutti gli aggiornamenti dalla build 40</button>' +
+      '<button class="btn primary" id="n-ok" style="width:100%;margin-top:9px">OK</button>');
     if ($('#n-close')) $('#n-close').addEventListener('click', closeModal);
+    if ($('#n-all')) $('#n-all').addEventListener('click', openChangelog);
     if ($('#n-ok')) $('#n-ok').addEventListener('click', closeModal);
+  }
+
+  async function openChangelog() {
+    const cur = buildNumber();
+    toast('Carico gli aggiornamenti…');
+    const j = await fetchChangelog();
+    if (!j || !Array.isArray(j.builds)) {
+      toast('Elenco non disponibile: serve la rete', 'bad');
+      return;
+    }
+    const list = j.builds.filter((b) => b.build >= 40 && Array.isArray(b.changes) && b.changes.length)
+      .sort((a, b) => b.build - a.build);
+    if (!list.length) { toast('Nessun aggiornamento da mostrare', 'bad'); return; }
+    const latest = list[0].build;
+    openModal('' +
+      '<div class="modal-head"><b>Aggiornamenti</b><button class="x" id="cl-close">✕</button></div>' +
+      '<p class="hint" style="margin-top:-6px">Dalla build <b>40</b> alla <b>' + latest + '</b>, dal più recente al più vecchio. ' +
+      (cur ? 'Su questo telefono è installata la <b>' + cur + '</b>.' : '') + '</p>' +
+      list.map((b) => '<div class="log-build' + (b.build === cur ? ' now' : '') + '">' +
+        '<div class="log-n">Build ' + b.build + (b.build === cur ? ' · installata' : '') + '</div>' +
+        '<ul class="news-list">' + b.changes.map((c) => '<li>' + esc(c) + '</li>').join('') + '</ul>' +
+        '</div>').join('') +
+      '<div class="btn-row"><button class="btn" id="cl-done">Chiudi</button></div>');
+    if ($('#cl-close')) $('#cl-close').addEventListener('click', closeModal);
+    if ($('#cl-done')) $('#cl-done').addEventListener('click', closeModal);
   }
 
   /* =============================== P. EVENTI =============================== */

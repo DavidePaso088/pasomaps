@@ -1,6 +1,15 @@
 {
   "builds": [
     {
+      "build": 52,
+      "date": "2026-11-20",
+      "changes": [
+        "Nuova voce in Impostazioni: “📋 Cosa è cambiato (dalla build 40)”",
+        "Elenco completo degli aggiornamenti dalla build 40 alla 52, diviso per build",
+        "La build installata è evidenziata; c'è il tasto anche nella finestrella delle novità"
+      ]
+    },
+    {
       "build": 51,
       "date": "2026-11-20",
       "changes": [

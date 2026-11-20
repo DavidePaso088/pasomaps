@@ -429,6 +429,11 @@ b,strong{font-weight:700}
 .ub-list li{margin:1px 0}
 .news-list{margin:6px 0 0;padding-left:18px;color:#cfe0f7;font-size:13px;line-height:1.5}
 .news-list li{margin:3px 0}
+.log-build{border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin-top:8px;background:rgba(255,255,255,.03)}
+.log-build.now{border-color:rgba(59,130,246,.5);background:rgba(30,58,110,.35)}
+.log-n{font-size:12.5px;font-weight:800;color:#dbe9ff;letter-spacing:.2px}
+.log-build .news-list{margin:5px 0 0;font-size:12.5px}
+.modal-card .btn{text-decoration:none}
 #voice-bar{
   position:fixed;left:12px;right:12px;top:calc(64px + var(--safe-t));z-index:70;
   display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:16px;
@@ -3147,6 +3152,7 @@ b,strong{font-weight:700}
       '<button class="btn" id="s-import-list" style="width:100%;margin-top:9px">Importa elenco (testo/CSV)</button>' +
       '<button class="btn" id="s-reset-day" style="width:100%;margin-top:9px">Azzera il giro di oggi</button>' +
       '<button class="btn" id="s-update" style="width:100%;margin-top:9px">Forza aggiornamento app</button>' +
+      '<button class="btn" id="s-changelog" style="width:100%;margin-top:9px">📋 Cosa è cambiato (dalla build 40)</button>' +
       '<button class="btn danger" id="s-wipe" style="width:100%;margin-top:9px">Cancella tutti i dati</button>' +
       '<p class="hint">I dati stanno solo in questo telefono: se cancelli la cache del browser o cambi telefono, senza backup li perdi. <b>Le foto delle consegne non entrano nel backup</b>: per tenerle, scaricale dalla foto stessa (⬇).</p>' +
       '<div class="section-t">Info</div>' +
@@ -3199,6 +3205,7 @@ b,strong{font-weight:700}
       location.replace(location.pathname + '?u=' + Date.now());
     });
     if ($('#s-import-list')) $('#s-import-list').addEventListener('click', () => { closeModal(); openImportModal(); });
+    if ($('#s-changelog')) $('#s-changelog').addEventListener('click', () => { closeModal(); openChangelog(); });
     const ttInput = $('#s-tt');
     if (ttInput) {
       ttInput.addEventListener('change', () => {
@@ -3888,9 +3895,36 @@ b,strong{font-weight:700}
     if (!entry || !Array.isArray(entry.changes) || !entry.changes.length) return;
     openModal('<div class="modal-head"><b>Cosa è cambiato · build ' + cur + '</b><button class="x" id="n-close">✕</button></div>' +
       '<ul class="news-list">' + entry.changes.map((c) => '<li>' + esc(c) + '</li>').join('') + '</ul>' +
-      '<button class="btn primary" id="n-ok" style="width:100%;margin-top:14px">OK</button>');
+      '<button class="btn" id="n-all" style="width:100%;margin-top:9px">Vedi tutti gli aggiornamenti dalla build 40</button>' +
+      '<button class="btn primary" id="n-ok" style="width:100%;margin-top:9px">OK</button>');
     if ($('#n-close')) $('#n-close').addEventListener('click', closeModal);
+    if ($('#n-all')) $('#n-all').addEventListener('click', openChangelog);
     if ($('#n-ok')) $('#n-ok').addEventListener('click', closeModal);
+  }
+
+  async function openChangelog() {
+    const cur = buildNumber();
+    toast('Carico gli aggiornamenti…');
+    const j = await fetchChangelog();
+    if (!j || !Array.isArray(j.builds)) {
+      toast('Elenco non disponibile: serve la rete', 'bad');
+      return;
+    }
+    const list = j.builds.filter((b) => b.build >= 40 && Array.isArray(b.changes) && b.changes.length)
+      .sort((a, b) => b.build - a.build);
+    if (!list.length) { toast('Nessun aggiornamento da mostrare', 'bad'); return; }
+    const latest = list[0].build;
+    openModal('' +
+      '<div class="modal-head"><b>Aggiornamenti</b><button class="x" id="cl-close">✕</button></div>' +
+      '<p class="hint" style="margin-top:-6px">Dalla build <b>40</b> alla <b>' + latest + '</b>, dal più recente al più vecchio. ' +
+      (cur ? 'Su questo telefono è installata la <b>' + cur + '</b>.' : '') + '</p>' +
+      list.map((b) => '<div class="log-build' + (b.build === cur ? ' now' : '') + '">' +
+        '<div class="log-n">Build ' + b.build + (b.build === cur ? ' · installata' : '') + '</div>' +
+        '<ul class="news-list">' + b.changes.map((c) => '<li>' + esc(c) + '</li>').join('') + '</ul>' +
+        '</div>').join('') +
+      '<div class="btn-row"><button class="btn" id="cl-done">Chiudi</button></div>');
+    if ($('#cl-close')) $('#cl-close').addEventListener('click', closeModal);
+    if ($('#cl-done')) $('#cl-done').addEventListener('click', closeModal);
   }
 
   /* =============================== P. EVENTI =============================== */
