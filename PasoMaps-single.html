@@ -3061,6 +3061,9 @@ b,strong{font-weight:700}
       '<div class="field"><label>Colore</label><div class="chips" id="g-colors">' +
       PALETTE.map((c) => '<button data-c="' + c + '" style="background:' + c + '33;border-color:' + c + (c === g.color ? ';box-shadow:0 0 0 2px ' + c : '') + '">●</button>').join('') +
       '</div></div>' +
+      (isNew ? '<div class="field"><label>Oppure importa l’elenco</label>' +
+        '<button class="btn" id="g-import" style="width:100%;padding:13px">📄 Importa elenco giro</button>' +
+        '<div class="hint">File di testo, CSV di Excel o PDF con testo: <b>una riga = una tappa</b>, i giri si creano da soli.</div></div>' : '') +
       '<div class="btn-row">' + (!isNew ? '<button class="btn danger" id="g-del">Elimina</button>' : '') +
       '<button class="btn" id="g-cancel">Annulla</button><button class="btn primary" id="g-save">' + (isNew ? 'Crea' : 'Salva') + '</button></div>' +
       (isNew ? '<p class="hint">Dopo la creazione puoi aggiungere subito le tappe.</p>' : '<p class="hint">La pressione lunga su un giro nella home apre questa finestra.</p>'));
@@ -3072,6 +3075,7 @@ b,strong{font-weight:700}
     }));
     $('#g-close').addEventListener('click', closeModal);
     $('#g-cancel').addEventListener('click', closeModal);
+    if ($('#g-import')) $('#g-import').addEventListener('click', () => { closeModal(); openImportModal(); });
     $('#g-save').addEventListener('click', () => {
       const name = $('#g-name').value.trim() || (isNew ? 'Giro ' + (db.giri.length + 1) : g.name);
       const city = $('#g-city').value.trim();
@@ -3149,7 +3153,6 @@ b,strong{font-weight:700}
         return days == null ? '' : ('<p class="hint" style="margin:0 0 8px">Ultimo backup: ' + (days < 1 ? 'oggi' : days + (days === 1 ? ' giorno' : ' giorni') + ' fa') + (days >= 7 ? ' · <span style="color:#ffb4b4">Fai un backup</span>' : '') + '</p>');
       })() +
       '<div class="btn-row"><button class="btn" id="s-export">Esporta backup</button><button class="btn" id="s-import">Importa</button></div>' +
-      '<button class="btn" id="s-import-list" style="width:100%;margin-top:9px">Importa elenco (testo/CSV)</button>' +
       '<button class="btn" id="s-reset-day" style="width:100%;margin-top:9px">Azzera il giro di oggi</button>' +
       '<button class="btn" id="s-update" style="width:100%;margin-top:9px">Forza aggiornamento app</button>' +
       '<button class="btn" id="s-changelog" style="width:100%;margin-top:9px">📋 Cosa è cambiato (dalla build 40)</button>' +
@@ -3390,12 +3393,68 @@ b,strong{font-weight:700}
     return giri.filter((g) => g.stops.length > 0);
   }
 
+  /* ---------- lettura PDF (pdf.js caricato solo quando serve) ---------- */
+  let pdfLibPromise = null;
+  function loadPdfLib() {
+    if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    if (pdfLibPromise) return pdfLibPromise;
+    pdfLibPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js';
+      s.onload = () => {
+        try {
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+        } catch (e) { }
+        resolve(window.pdfjsLib);
+      };
+      s.onerror = () => { pdfLibPromise = null; reject(new Error('cdn')); };
+      document.head.appendChild(s);
+    });
+    return pdfLibPromise;
+  }
+
+  async function pdfToText(file) {
+    const lib = await loadPdfLib();
+    const buf = await file.arrayBuffer();
+    const doc = await lib.getDocument({ data: buf }).promise;
+    const out = [];
+    for (let p = 1; p <= doc.numPages; p++) {
+      const page = await doc.getPage(p);
+      const tc = await page.getTextContent();
+      const rows = [];
+      tc.items.forEach((it) => {
+        const str = String(it.str || '');
+        if (!str.trim()) return;
+        const y = it.transform[5];
+        let row = rows.find((r) => Math.abs(r.y - y) <= 3);
+        if (!row) { row = { y: y, items: [] }; rows.push(row); }
+        row.items.push({ x: it.transform[4], s: str });
+      });
+      rows.sort((a, b) => b.y - a.y);
+      rows.forEach((r) => {
+        const line = r.items.sort((a, b) => a.x - b.x).map((i) => i.s).join(' ').replace(/\s+/g, ' ').trim();
+        if (line) out.push(line);
+        // stacco fra blocchi molto distanti: aiuta il parser a riconoscere i titoli
+        else out.push('');
+      });
+    }
+    try { doc.cleanup(); } catch (e) { }
+    return out.join('\n');
+  }
+
   function openImportModal() {
     openModal('' +
-      '<div class="modal-head"><b>Importa elenco</b><button class="x" id="i-close">✕</button></div>' +
-      '<p class="hint" style="margin-top:-6px">Incolla dal Notepad o scegli il file. <b>Una riga = una tappa</b>. Una riga con “Giro …”, “Giorno …”, “Lunedì …” apre un nuovo giro. Esempio:<br><code>Giro 1 - Verona</code><br><code>Via Roma 1 - Rossi</code><br><code>Via Mazzini 10 (piano 3, citofono)</code></p>' +
+      '<div class="modal-head"><b>Importa elenco giro</b><button class="x" id="i-close">✕</button></div>' +
+      '<p class="hint" style="margin-top:-6px">Incolla il testo o scegli il file. <b>Una riga = una tappa</b>. Una riga con “Giro …”, “Giorno …”, “Lunedì …” apre un nuovo giro. Esempio:<br><code>Giro 1 - Verona</code><br><code>Via Roma 1 - Rossi</code><br><code>Via Mazzini 10 (piano 3, citofono)</code></p>' +
+      '<details style="margin:0 0 6px"><summary style="cursor:pointer;color:#9db4d6;font-size:12px">Formati accettati e come prepararli</summary>' +
+      '<div class="hint" style="margin-top:7px;line-height:1.55">' +
+      '<b>.txt</b> — Notepad del telefono: una riga per indirizzo, salva come testo. È il formato più affidabile.<br>' +
+      '<b>.csv</b> — da Excel o Fogli Google “Salva come / Scarica → CSV”. Se la prima riga ha intestazioni tipo <i>Cliente, Indirizzo, Note, Giro</i>, le uso per sistemare le colonne.<br>' +
+      '<b>.pdf</b> — solo se il testo si può selezionare col dito (non scansioni o fotografie). Il PDF viene letto e copiato qui sotto: <b>controlla sempre il riepilogo</b> prima di importare. Per leggere un PDF serve la rete.<br>' +
+      '<b>Excel .xlsx</b> — non supportato direttamente: salvalo in CSV.' +
+      '</div></details>' +
       '<div class="field"><label>Elenco</label><textarea id="i-text" style="min-height:150px" placeholder="Giro 1 - Verona&#10;Via Roma 1 - Rossi&#10;Via Mazzini 10 (piano 3)&#10;&#10;Giro 2 - Vicenza&#10;..."></textarea>' +
-      '<div class="chips" style="margin-top:8px"><button id="i-file">Scegli file .txt/.csv</button><button id="i-clear">Svuota</button></div></div>' +
+      '<div class="chips" style="margin-top:8px"><button id="i-file">📄 Scegli file (.txt .csv .pdf)</button><button id="i-clear">Svuota</button></div></div>' +
       '<div class="field"><label>Zona (città)</label><input id="i-zone" placeholder="es. Viareggio"><div class="hint">La ricerca resta entro ~35 km da questa città. Se il giro si chiama come la città (“Viareggio” o “Viareggio Marco Polo”) viene usata quella; se si chiama “Giro 1”, scrivila qui.</div></div>' +
       '<div class="switch" style="border-bottom:0;padding-top:0"><div class="lbl">Cerca le coordinate<small>' + (tomtomReady() ? 'Con la chiave TomTom i civici sono più precisi.' : 'Senza chiave TomTom uso OpenStreetMap: più lento e con meno civici.') + '</small></div><button class="tgl ' + (tomtomReady() ? 'on' : '') + '" id="i-geo"></button></div>' +
       '<div id="i-preview" class="hint"></div>' +
@@ -3418,12 +3477,37 @@ b,strong{font-weight:700}
     $('#i-clear').addEventListener('click', () => { ta.value = ''; refresh(); });
     $('#i-file').addEventListener('click', () => {
       const inp = document.createElement('input');
-      inp.type = 'file'; inp.accept = '.txt,.csv,text/plain,text/csv';
+      inp.type = 'file'; inp.accept = '.txt,.csv,.tsv,.pdf,text/plain,text/csv,application/pdf';
       inp.addEventListener('change', async () => {
         const f = inp.files && inp.files[0];
         if (!f) return;
-        ta.value = await f.text();
-        refresh();
+        const isPdf = /\.pdf$/i.test(f.name) || f.type === 'application/pdf';
+        if (!isPdf) {
+          try {
+            ta.value = await f.text();
+            refresh();
+            const n = parseList(ta.value).reduce((a, g) => a + g.stops.length, 0);
+            toast(n ? 'File letto: ' + n + ' tappe' : 'File letto, ma nessuna via riconosciuta', n ? 'good' : 'bad');
+          } catch (e) { toast('File non leggibile', 'bad'); }
+          return;
+        }
+        const btn = $('#i-file'); const old = btn.textContent;
+        btn.textContent = 'Leggo il PDF…'; btn.disabled = true;
+        try {
+          const txt = await pdfToText(f);
+          if (!txt || !txt.trim()) throw new Error('vuoto');
+          ta.value = txt;
+          refresh();
+          const n = parseList(txt).reduce((a, g) => a + g.stops.length, 0);
+          if (n) toast('PDF letto: ' + n + ' tappe riconosciute · controlla l’elenco', 'good');
+          else toast('PDF letto, ma nessuna via riconosciuta: correggi l’elenco a mano', 'bad');
+        } catch (e) {
+          toast(e && e.message === 'cdn'
+            ? 'Per leggere i PDF serve la rete: riprova online'
+            : 'PDF senza testo (scansione o foto): non riesco a leggerlo', 'bad');
+        } finally {
+          btn.textContent = old; btn.disabled = false;
+        }
       });
       inp.click();
     });
@@ -4071,7 +4155,7 @@ b,strong{font-weight:700}
     if (bt) bt.textContent = APP_BUILD;
     // iOS: le voci arrivano in ritardo
     if ('speechSynthesis' in window) window.speechSynthesis.onvoiceschanged = () => { voiceIt = null; };
-    window.PasoMaps = { db: () => db, S: S, Nav: Nav, getMap: () => map, computePreview: computePreview, voice: { parse: parseVoiceCommand, run: runVoiceText }, photos: { open: openPhotos, counts: () => photoCounts, refresh: refreshPhotoCounts } };
+    window.PasoMaps = { db: () => db, S: S, Nav: Nav, getMap: () => map, computePreview: computePreview, voice: { parse: parseVoiceCommand, run: runVoiceText }, photos: { open: openPhotos, counts: () => photoCounts, refresh: refreshPhotoCounts }, imports: { parse: parseList, pdf: pdfToText } };
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

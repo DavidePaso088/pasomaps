@@ -1,6 +1,17 @@
 {
   "builds": [
     {
+      "build": 53,
+      "date": "2026-11-20",
+      "changes": [
+        "Importa elenco ora è dentro “+ Nuovo giro”: pulsante “📄 Importa elenco giro”, niente più in Impostazioni",
+        "Si possono scegliere file .txt, .csv e anche .pdf con testo (non scansioni o foto)",
+        "Riquadro “Formati accettati e come prepararli” con le istruzioni dentro la finestra",
+        "Il PDF viene letto e copiato nell'elenco: controlli il riepilogo prima di importare",
+        "Per leggere un PDF serve la rete; per gli altri formati no"
+      ]
+    },
+    {
       "build": 52,
       "date": "2026-11-20",
       "changes": [
