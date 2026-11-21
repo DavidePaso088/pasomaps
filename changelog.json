@@ -1,6 +1,14 @@
 {
   "builds": [
     {
+      "build": 66,
+      "date": "2026-11-21",
+      "changes": [
+        "Le istruzioni di guida arrivano nella lingua scelta (TomTom e Valhalla)",
+        "Cambiando lingua il percorso salvato non viene riusato: si ricalcola con le indicazioni giuste"
+      ]
+    },
+    {
       "build": 65,
       "date": "2026-11-21",
       "changes": [

@@ -1452,7 +1452,7 @@ b,strong{font-weight:700}
     p.set('vehicleWeight', String(Math.round((+t.weight || 3.5) * 1000)));
     p.set('vehicleAxleWeight', String(Math.round((+t.axle_load || 1.8) * 1000)));
     p.set('vehicleCommercial', 'true');
-    p.set('language', 'it-IT');
+    p.set('language', LANG === 'en' ? 'en-GB' : 'it-IT');
     p.set('instructionsType', 'text');
     p.set('computeTravelTimeFor', 'all');
     p.append('sectionType', 'traffic');
@@ -1567,8 +1567,8 @@ b,strong{font-weight:700}
       costing: 'truck',
       costing_options: { truck: truckOptions(opts.allowHighways) },
       units: 'kilometers',
-      language: 'it-IT',
-      directions_options: { units: 'kilometers', language: { text_locale: 'it-IT' } }
+      language: LANG === 'en' ? 'en-GB' : 'it-IT',
+      directions_options: { units: 'kilometers', language: { text_locale: LANG === 'en' ? 'en-GB' : 'it-IT' } }
     };
     if (opts.shortest) body.shortest = true;
     const res = await fetch(VH_ROUTE, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -2212,13 +2212,13 @@ b,strong{font-weight:700}
         sections: sections.map((s) => ({ from: s.from, to: s.to, mag: s.mag, delay: s.delay })),
         legs: r.legs.map((l) => ({ km: l.km, sec: l.sec, total: l.total }))
       };
-      localStorage.setItem(ROUTE_CACHE + g.id, JSON.stringify(payload));
+      localStorage.setItem(ROUTE_CACHE + g.id + '|' + LANG, JSON.stringify(payload));
     } catch (e) { console.warn('cache percorso', e); }
   }
 
   function loadRouteCache(id) {
     try {
-      const raw = localStorage.getItem(ROUTE_CACHE + id);
+      const raw = localStorage.getItem(ROUTE_CACHE + id + '|' + LANG);
       if (!raw) return null;
       const p = JSON.parse(raw);
       if (!p || !Array.isArray(p.coords) || p.coords.length < 2) return null;
@@ -2250,7 +2250,7 @@ b,strong{font-weight:700}
         const isRoute = k.indexOf(ROUTE_CACHE) === 0;
         const isNav = k.indexOf(NAV_CACHE) === 0;
         if (!isRoute && !isNav) return;
-        const id = k.slice((isRoute ? ROUTE_CACHE : NAV_CACHE).length);
+        const id = k.slice((isRoute ? ROUTE_CACHE : NAV_CACHE).length).split('|')[0];
         if (!ids.has(id)) localStorage.removeItem(k);
       });
     } catch (e) { }
@@ -2268,13 +2268,13 @@ b,strong{font-weight:700}
         maneuvers: (leg.maneuvers || []).map((m) => ({ along: Math.round(m.along), text: m.text, verbal: m.verbal, arrow: m.arrow })),
         sections: (leg.sections || []).map((s) => ({ from: s.from, to: s.to, mag: s.mag, delay: s.delay }))
       };
-      localStorage.setItem(NAV_CACHE + S.giro.id, JSON.stringify(payload));
+      localStorage.setItem(NAV_CACHE + S.giro.id + '|' + LANG, JSON.stringify(payload));
     } catch (e) { }
   }
 
   function loadNavCache(giroId) {
     try {
-      const raw = localStorage.getItem(NAV_CACHE + giroId);
+      const raw = localStorage.getItem(NAV_CACHE + giroId + '|' + LANG);
       if (!raw) return null;
       const p = JSON.parse(raw);
       if (!p || !Array.isArray(p.coords) || p.coords.length < 2) return null;
