@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css">
-<link rel="stylesheet" href="css/app.css?v=53">
+<link rel="stylesheet" href="css/app.css?v=55">
 </head>
 <body>
 
@@ -28,6 +28,10 @@
 <section id="s-home" class="screen on">
   <header class="appbar">
     <div class="brand"><span class="logo-dot"></span>Paso<span>Maps</span></div>
+    <div class="lang-switch" role="group" aria-label="Lingua / Language">
+      <button class="lang-btn" id="lang-it" data-lang="it">IT</button>
+      <button class="lang-btn" id="lang-en" data-lang="en">EN</button>
+    </div>
     <button class="icon-btn" id="btn-settings" aria-label="Impostazioni">⚙</button>
   </header>
   <div class="home-scroll">
@@ -120,6 +124,6 @@
 <div id="update-bar" hidden><div class="ub-title">Nuova versione pronta — tocca per aggiornare</div></div>
 
 <script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
-<script src="js/app.js?v=61"></script>
+<script src="js/app.js?v=65"></script>
 </body>
 </html>

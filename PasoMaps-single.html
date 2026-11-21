@@ -76,6 +76,13 @@ b,strong{font-weight:700}
   padding:calc(14px + var(--safe-t)) 18px 10px;
 }
 .brand{display:flex;align-items:center;gap:9px;font-size:19px;font-weight:800;letter-spacing:.2px}
+.lang-switch{display:flex;gap:4px;margin-left:auto;margin-right:2px;padding:3px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid var(--line)}
+.lang-btn{
+  min-width:34px;height:28px;padding:0 8px;border-radius:9px;border:1px solid transparent;
+  background:transparent;color:#8fa1bd;font-size:11.5px;font-weight:800;letter-spacing:.4px;
+}
+.lang-btn.on{background:linear-gradient(145deg,#1d4ed8,#2563eb);color:#fff;border-color:rgba(96,165,250,.55)}
+.lang-btn:active{transform:scale(.95)}
 .brand span{color:var(--blue2)}
 .logo-dot{width:11px;height:11px;border-radius:50%;background:linear-gradient(145deg,#1d4ed8,#22d3ee);box-shadow:0 0 14px rgba(34,211,238,.7);display:inline-block}
 .icon-btn{
@@ -530,6 +537,10 @@ b,strong{font-weight:700}
 <section id="s-home" class="screen on">
   <header class="appbar">
     <div class="brand"><span class="logo-dot"></span>Paso<span>Maps</span></div>
+    <div class="lang-switch" role="group" aria-label="Lingua / Language">
+      <button class="lang-btn" id="lang-it" data-lang="it">IT</button>
+      <button class="lang-btn" id="lang-en" data-lang="en">EN</button>
+    </div>
     <button class="icon-btn" id="btn-settings" aria-label="Impostazioni">⚙</button>
   </header>
   <div class="home-scroll">
@@ -639,11 +650,491 @@ b,strong{font-weight:700}
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const todayISO = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 
+  /* =============================== A2. LINGUA =============================== */
+  let LANG = 'it';
+
+  const EN_TEXT = {
+    /* --- generici --- */
+    'i tuoi giri, senza autostrada': 'your rounds, no motorways',
+    'PasoMaps': 'PasoMaps',
+    'Chiudi': 'Close',
+    'Annulla': 'Cancel',
+    'Salva': 'Save',
+    'Cerca': 'Search',
+    'Elimina': 'Delete',
+    'Togli': 'Remove',
+    'Importa': 'Import',
+    'Esporta backup': 'Export backup',
+    'Indietro': 'Back',
+    'Tappe': 'Stops',
+    'Salta': 'Skip',
+    'Naviga': 'Navigate',
+    'Prossima tappa': 'Next stop',
+    'Totale giro': 'Round total',
+    'nessuna tappa': 'no stops',
+    'Nessuna tappa': 'No stops',
+    'Già fatto': 'Already done',
+    'Modifica tappa': 'Edit stop',
+    'Esito della consegna': 'Delivery outcome',
+    'Foto consegna': 'Delivery photo',
+    'Salva percorso': 'Save route',
+    'Riprova indirizzi mancanti': 'Retry missing addresses',
+    'Tieni premuto su una tappa per spostarla': 'Press and hold a stop to move it',
+    'Tappe del giro': 'Round stops',
+    '🧭 Modalità libera': '🧭 Free mode',
+    'modalità libera': 'free mode',
+    'le autostrade sono permesse.': 'motorways are allowed.',
+    '⤼ Salta': '⤼ Skip',
+    '⤼': '⤼',
+    'Salta questa tappa': 'Skip this stop',
+    'Naviga alla prossima tappa': 'Navigate to the next stop',
+    '🧭 Navigazione in app': '🧭 In-app navigation',
+    '🟦 Apri Google Maps': '🟦 Open Google Maps',
+    '(senza autostrade)': '(without motorways)',
+    '🟠 Apri OsmAnd': '🟠 Open OsmAnd',
+    '(offline, profili camion)': '(offline, truck profiles)',
+    'Il mio camioncino': 'My van',
+    'Servono per evitare sottopassi bassi e strade vietate ai mezzi pesanti.': 'Used to avoid low bridges and roads closed to heavy vehicles.',
+    'Navigazione': 'Navigation',
+    'Istruzioni lette ad alta voce': 'Spoken instructions',
+    'Passa da sola alla tappa dopo': 'Moves to the next stop automatically',
+    'Quando arrivi, segna fatta e riparte': 'On arrival it marks done and restarts',
+    'Avvisa ZTL/divieti locali': 'Warn about ZTL / local restrictions',
+    'Toast quando avvi la navigazione in una città': 'Toast when you start navigation in a city',
+    'Autostrade': 'Motorways',
+    'Bloccate: i percorsi non le usano mai. Statali e provinciali sì.': 'Blocked: routes never use them. A-roads and B-roads are fine.',
+    'Luminosità mappa': 'Map brightness',
+    'La mappa è chiara; il resto dell’app resta scuro.': 'The map stays light; the rest of the app stays dark.',
+    'Base mappa': 'Base map',
+    'Traffico (TomTom)': 'Traffic (TomTom)',
+    'Chiave API TomTom': 'TomTom API key',
+    '📋 Cosa è cambiato (dalla build 40)': '📋 What changed (since build 40)',
+    'Versione': 'Version',
+    'Nessuna foto · si gestiscono dal tasto': 'No photos · manage them with the',
+    'qui fuori, così non perdi le modifiche in corso.': 'button outside, so you do not lose edits in progress.',
+    'Corse': 'Runs',
+    'Runs': 'Runs',
+    'min ': 'min ',
+    'Aggiungi la prima tappa con “+ Aggiungi”': 'Add the first stop with “+ Add”',
+    'Apri Tappe → “Riprova indirizzi mancanti”': 'Open Stops → “Retry missing addresses”',
+    'Una sola tappa: aggiungine un’altra, oppure tocca ➤ per navigare verso questa': 'Only one stop: add another, or tap ➤ to navigate to this one',
+    'Nessuna foto.': 'No photos.',
+    'Scatta la prova di consegna: pacco, portone, ricevuta.': 'Take proof of delivery: parcel, door, receipt.',
+    '📷 Scatta foto': '📷 Take photo',
+    '🖼 Galleria': '🖼 Gallery',
+    'Le foto restano': 'Photos stay',
+    'solo su questo telefono': 'on this phone only',
+    ': non entrano nel backup dei giri e non vanno su internet. Se cancelli la tappa, spariscono.': ': they are not part of the round backup and never go online. If you delete the stop, they are gone.',
+    'Tocca com’è andata: la tappa viene segnata da sola come fatta o saltata, e l’incassato si somma nella lista tappe.': 'Tap how it went: the stop is marked done or skipped automatically, and the cash total adds up in the stop list.',
+    'Esito · ': 'Outcome · ',
+    'Foto · ': 'Photo · ',
+    'Cosa è cambiato': 'What changed',
+    'Aggiornamenti': 'Updates',
+    'Vedi tutti gli aggiornamenti dalla build 40': 'See all updates since build 40',
+    'Nuova tappa': 'New stop',
+    'Tappa': 'Stop',
+    'Tappe': 'Stops',
+    'Aggiungi': 'Add',
+
+    /* --- home --- */
+    'Quale giro oggi?': 'Which round today?',
+    'Scegli il giro che stai facendo: si apre la mappa con le tappe già pronte.': 'Pick the round you are doing: the map opens with the stops ready.',
+    '+ Nuovo giro': '+ New round',
+    'Modalità libera': 'Free mode',
+    '· navigatore normale': '· normal navigator',
+    'Percorsi calcolati': 'Routes always calculated',
+    'evitando sempre le autostrade': 'avoiding motorways',
+    'Nella': 'In',
+    'le autostrade sono permesse': 'motorways are allowed',
+    'Dati salvati solo su questo telefono.': 'Data saved on this phone only.',
+    'Non hai ancora nessun giro.': 'You have no rounds yet.',
+    'Tocca': 'Tap',
+    'dagli un nome (es. "Lunedì 1ª settimana"), indica la zona e aggiungi le tappe.': 'give it a name (e.g. "Monday week 1"), set the area and add the stops.',
+    'Ogni giro resta salvato e lo ritrovi uguale tra due settimane.': 'Every round is saved and you will find it unchanged two weeks later.',
+    'Zona non indicata': 'Area not set',
+    'tappa': 'stop',
+    'tappe': 'stops',
+    'da impostare': 'to be set',
+    'in corso': 'in progress',
+    'Modifica giro': 'Edit round',
+    'Nuovo giro': 'New round',
+
+    /* --- mappa / navigazione --- */
+    'Calcolo percorso…': 'Calculating route…',
+    'Calcolo percorso.': 'Calculating route…',
+    'Cerco il segnale GPS…': 'Looking for GPS signal…',
+    'navigazione senza autostrada': 'navigation without motorways',
+    'Arrivo a destinazione': 'Arriving at destination',
+    'Salta questa tappa': 'Skip this stop',
+    'Ricalcola percorso': 'Recalculate route',
+    'Prepara offline': 'Prepare offline',
+    'Percorso alternativo': 'Alternative route',
+    'Centra sulla mia posizione': 'Centre on my position',
+    'Impostazioni': 'Settings',
+    'Foto della consegna': 'Delivery photo',
+    'Comandi vocali': 'Voice commands',
+    'Ti ascolto…': 'Listening…',
+    'Ti ascolto.': 'Listening…',
+    'Arrivo a destinazione': 'Arriving at destination',
+    'GPS vecchio': 'GPS stale',
+    'GPS impreciso': 'GPS inaccurate',
+    'Giro finito': 'Round finished',
+    'Tappe senza posizione': 'Stops without position',
+    'tutte fatte': 'all done',
+    'Nessuna tappa rimasta': 'No stops left',
+    'Tappa': 'Stop',
+    'arrivo': 'arrive',
+    'min': 'min',
+    'senza autostrada ✓': 'no motorways ✓',
+    'autostrade permesse': 'motorways allowed',
+    'traffico ok': 'traffic ok',
+    'senza traffico': 'no traffic data',
+    'partenza': 'start',
+
+    /* --- lista tappe --- */
+    'Nessuna tappa in questo giro.': 'No stops in this round.',
+    'e cerca l’indirizzo.': 'and search the address.',
+    'posizione mancante': 'position missing',
+    'civico approssimato · verifica il pin': 'approximate house number · check the pin',
+    'Ricalcola posizioni': 'Recalculate positions',
+    'Oggi': 'Today',
+    'incassato': 'collected',
+    'non pagata': 'not paid',
+    'non pagate': 'not paid',
+    'non consegnata': 'not delivered',
+    'non consegnate': 'not delivered',
+    'Sposta su': 'Move up',
+    'Sposta giù': 'Move down',
+
+    /* --- esiti --- */
+    'Esito': 'Outcome',
+    'Consegnata': 'Delivered',
+    'Ha pagato una cifra': 'Paid an amount',
+    'Non ha pagato': 'Did not pay',
+    'Non era presente': 'Customer not in',
+    'Non consegnata': 'Not delivered',
+    'Quanto ha pagato (€)': 'How much did they pay (€)',
+    'Ha pagato': 'Paid',
+    'Consegnata, ha pagato': 'Delivered, paid',
+    'Consegnata, non ha pagato': 'Delivered, not paid',
+    'Cliente non presente': 'Customer not in',
+    'Cliente non presente': 'Customer not in',
+
+    /* --- scheda tappa --- */
+    'Nuova tappa': 'New stop',
+    'Nome / cliente': 'Name / customer',
+    'es. Rossi — portineria': 'e.g. Rossi — caretaker',
+    'Indirizzo': 'Address',
+    'Via, numero, città': 'Street, number, city',
+    '📍 Posizione attuale': '📍 Current position',
+    'Incolla coordinate': 'Paste coordinates',
+    'Nessuna posizione selezionata: cerca e tocca un risultato.': 'No position selected: search and tap a result.',
+    '📌 Posiziona il pin sulla mappa': '📌 Place the pin on the map',
+    'Note per la consegna': 'Delivery notes',
+    'Piano 3 interno B, citofono Rossi, lasciare i pacchi in portineria…': 'Floor 3 flat B, Rossi buzzer, leave parcels at the caretaker…',
+    'Piano': 'Floor',
+    'Citofono': 'Buzzer',
+    'Portineria': 'Caretaker',
+    'Garage': 'Garage',
+    'A mano': 'By hand',
+    'Non suonare': 'Do not ring',
+    'Foto della consegna': 'Delivery photos',
+    'Coordinate': 'Coordinates',
+    'scelte a mano': 'set by hand',
+    'Ricerca…': 'Searching…',
+    'Nessun risultato. Aggiungi la città o usa “Posizione attuale”.': 'No results. Add the city or use “Current position”.',
+    '✓ Posizione impostata': '✓ Position set',
+    'Coordinate: ': 'Coordinates: ',
+
+    /* --- foto --- */
+    'Scatta foto': 'Take photo',
+    'Galleria': 'Gallery',
+    'Nessuna foto.': 'No photos.',
+    'Scatta la prova di consegna: pacco, portone, ricevuta.': 'Take proof of delivery: parcel, door, receipt.',
+    'Foto': 'Photo',
+    'Scarica': 'Download',
+
+    /* --- impostazioni --- */
+    'Camion': 'Truck',
+    'Altezza (m)': 'Height (m)',
+    'Larghezza (m)': 'Width (m)',
+    'Lunghezza (m)': 'Length (m)',
+    'Peso (t)': 'Weight (t)',
+    'Carico per asse (t)': 'Load per axle (t)',
+    'Mappa': 'Map',
+    'OpenFreeMap (vettoriale, 3D)': 'OpenFreeMap (vector, 3D)',
+    'OpenStreetMap (raster)': 'OpenStreetMap (raster)',
+    'TomTom (raster, con chiave)': 'TomTom (raster, needs key)',
+    'Aspetto': 'Appearance',
+    'Luminosità': 'Brightness',
+    'Voce': 'Voice',
+    'Avanzamento automatico': 'Auto advance',
+    'Avviso ZTL': 'ZTL warning',
+    'Chiave TomTom': 'TomTom key',
+    'Verifica chiave': 'Check key',
+    'Rimuovi': 'Remove',
+    'Dati': 'Data',
+    'Azzera il giro di oggi': 'Reset today’s round',
+    'Forza aggiornamento app': 'Force app update',
+    'Cancella tutti i dati': 'Delete all data',
+    'Ultimo backup: oggi': 'Last backup: today',
+    'Fai un backup': 'Make a backup',
+    'Info': 'Info',
+
+    /* --- messaggi --- */
+    'Tappa aggiunta · salvata per le prossime volte': 'Stop added · kept for next time',
+    'Tappa aggiornata': 'Stop updated',
+    'Tappa eliminata': 'Stop deleted',
+    'Tappa saltata per oggi (resta salvata nel giro)': 'Stop skipped for today (still saved in the round)',
+    'Tappa ripristinata': 'Stop restored',
+    'Tappa spostata': 'Stop moved',
+    'Ordine aggiornato': 'Order updated',
+    'Giro creato': 'Round created',
+    'Giro aggiornato': 'Round updated',
+    'Giro eliminato': 'Round deleted',
+    'Percorso aggiornato e salvato': 'Route updated and saved',
+    'Navigazione avviata · solo strade senza autostrada': 'Navigation started · no motorways',
+    'Navigazione fermata': 'Navigation stopped',
+    'Navigazione non attiva': 'Navigation not active',
+    'Nessuna tappa da raggiungere': 'No stops to reach',
+    'Nessuna tappa da saltare': 'No stops to skip',
+    'Nessuna tappa da fotografare': 'No stop to photograph',
+    'Nessuna consegna da fotografare': 'No delivery to photograph',
+    'Nessuna tappa posizionata': 'No positioned stops',
+    'Nessuna tappa selezionata': 'No stop selected',
+    'Nessuna alternativa disponibile': 'No alternative available',
+    'Esito rimosso': 'Outcome removed',
+    'Scegli un esito': 'Choose an outcome',
+    'Scrivi quanto ha pagato': 'Enter how much they paid',
+    'Coordinate non riconosciute': 'Coordinates not recognised',
+    'Coordinate non valide': 'Invalid coordinates',
+    'Coordinate fuori scala: controlla i numeri': 'Coordinates out of range: check the numbers',
+    'Erano invertite: le ho rimesse a posto': 'They were swapped: fixed',
+    'Posizione aggiornata': 'Position updated',
+    'Posizione non disponibile: controlla i permessi': 'Position unavailable: check permissions',
+    'GPS non disponibile': 'GPS unavailable',
+    'GPS non disponibile su questo browser': 'GPS unavailable in this browser',
+    'GPS non avviato': 'GPS not started',
+    'Microfono non avviato': 'Microphone not started',
+    'Microfono non autorizzato: concedi il permesso': 'Microphone not allowed: grant permission',
+    'Non ho sentito niente': 'I did not hear anything',
+    'Microfono non disponibile': 'Microphone unavailable',
+    'Riconoscimento non disponibile: serve la rete': 'Recognition unavailable: needs network',
+    'Comandi vocali non supportati: usa Chrome su Android': 'Voice commands not supported: use Chrome on Android',
+    'Apri prima un giro': 'Open a round first',
+    'Scrivi almeno 3 caratteri': 'Type at least 3 characters',
+    'Serve almeno un nome o un indirizzo': 'A name or an address is required',
+    'Indirizzo non trovato: tocca un risultato o usa la posizione attuale': 'Address not found: tap a result or use the current position',
+    'Prima cerca e seleziona la via': 'First search and select the street',
+    'Memoria del telefono piena: esporta un backup': 'Phone storage full: export a backup',
+    'Dati cancellati': 'Data deleted',
+    'Giro azzerato: tutte le tappe da fare': 'Round reset: all stops to do',
+    'Backup salvato nei Download': 'Backup saved in Downloads',
+    'Backup importato': 'Backup imported',
+    'File non valido': 'Invalid file',
+    'File non leggibile': 'Unreadable file',
+    'Elenco non disponibile: serve la rete': 'List unavailable: needs network',
+    'Nessun aggiornamento da mostrare': 'No updates to show',
+    'Nessuna tappa riconosciuta: controlla il formato': 'No stops recognised: check the format',
+    'PDF letto, ma nessuna via riconosciuta: correggi l’elenco a mano': 'PDF read, but no streets recognised: fix the list by hand',
+    'Per l’offline usa OpenFreeMap come base mappa': 'For offline use OpenFreeMap as base map',
+    'Offline pronto': 'Offline ready',
+    'Servizio mappe non raggiungibile': 'Map service unreachable',
+    'Nessuna rete: uso l’ultimo percorso salvato': 'No network: using the last saved route',
+    'Senza rete: continuo con l’ultimo percorso salvato': 'No network: continuing with the last saved route',
+    'Non riesco a calcolare il percorso ora': 'Cannot calculate the route now',
+    'Aspetta il calcolo del percorso': 'Wait for the route calculation',
+    'Percorso consigliato': 'Suggested route',
+    'Ricalcolo percorso.': 'Recalculating route…',
+    'Rilevo la posizione.': 'Getting the position…',
+    'Stai andando a una destinazione libera: usa "ferma"': 'You are heading to a free destination: say "stop"',
+    'Non ho capito. Prova: “aggiungi via Roma 1” o “portami a via Roma 1”': 'I did not understand. Try: “add Via Roma 1” or “take me to Via Roma 1”',
+    'Dimmi la via': 'Tell me the street',
+    'Dimmi dove': 'Tell me where',
+    'Giro completato': 'Round complete',
+    'Saltata': 'Skipped',
+    'Arrivato': 'Arrived',
+    'Prima inserisci la chiave TomTom': 'Enter the TomTom key first',
+    'Incolla prima la chiave': 'Paste the key first',
+    'Chiave rimossa': 'Key removed',
+    'Chiave non valida': 'Invalid key',
+    'Le autostrade sono escluse per scelta: non si possono attivare': 'Motorways are excluded by design: they cannot be enabled',
+    'Sposta la tappa dove vuoi, poi rilascia': 'Move the stop where you want, then release',
+    'Le mappe TomTom non rispondono: torno a OpenFreeMap': 'TomTom maps not responding: back to OpenFreeMap',
+    'TomTom non risponde': 'TomTom not responding',
+    'Non trovo': 'I cannot find',
+    'Ci sono': 'There are',
+    'Mancano': 'Remaining',
+    'Importate': 'Imported',
+    'Carico gli aggiornamenti…': 'Loading updates…',
+    'Ricalcola posizioni': 'Recalculate positions',
+    'Nuova versione pronta — tocca per aggiornare': 'New version ready — tap to update',
+    'Impostazioni': 'Settings',
+    'Cosa è cambiato': 'What changed',
+    'Tutti gli aggiornamenti': 'All updates',
+    'Vedi tutti gli aggiornamenti dalla build 40': 'See all updates since build 40',
+    '+ Aggiungi': '+ Add',
+    'Dove vai?': 'Where are you going?',
+    'Navigatore normale: le autostrade sono permesse. Scrivi la destinazione e tocca il risultato.': 'Normal navigator: motorways are allowed. Type the destination and tap the result.',
+    'Nessun risultato: aggiungi la città.': 'No results: add the city.',
+    'Non trovo “': 'I cannot find “',
+    'via': 'street',
+    'Modifica giro': 'Edit round',
+    'Nome del giro': 'Round name',
+    'Città / zona': 'City / area',
+    'Colore': 'Colour',
+    'Oppure importa l’elenco': 'Or import the list',
+    '📄 Importa elenco giro': '📄 Import round list',
+    'Crea': 'Create',
+    'Dopo la creazione puoi aggiungere subito le tappe.': 'After creating you can add stops straight away.',
+    'La pressione lunga su un giro nella home apre questa finestra.': 'Long-press a round on the home screen to open this window.',
+    'es. Lunedì 1ª settimana': 'e.g. Monday week 1',
+    'es. Verona sud': 'e.g. South Verona',
+    'es. Viareggio': 'e.g. Viareggio',
+    'incolla qui la chiave': 'paste the key here',
+    'Importa elenco giro': 'Import round list',
+    'Elenco': 'List',
+    'Zona (città)': 'Area (city)',
+    'Cerca le coordinate': 'Look up coordinates',
+    'Formati accettati e come prepararli': 'Accepted formats and how to prepare them',
+    'Svuota': 'Clear',
+    '📄 Scegli file (.txt .csv .pdf)': '📄 Choose file (.txt .csv .pdf)',
+    'Prepara offline': 'Prepare offline',
+    'Dalla build': 'From build',
+    'installata': 'installed',
+    'Aggiornamenti': 'Updates',
+    'Vedi tutti gli aggiornamenti dalla build 40': 'See all updates since build 40',
+    'Carico gli aggiornamenti…': 'Loading updates…',
+    'Il mio camioncino': 'My van',
+    'Cosa è cambiato': 'What changed',
+    'Nuova tappa': 'New stop',
+    'Nuovo giro': 'New round',
+    'Salva': 'Save',
+    'Crea': 'Create',
+    'Chiudi': 'Close',
+    'Sì': 'Yes',
+    'No': 'No',
+    'Giorno': 'Day',
+    'Oggi': 'Today',
+    'Ieri': 'Yesterday',
+    '“aggiungi via Roma 1” · “portami a via Mazzini 10” · “salta” · “ferma”': '“add Via Roma 1” · “take me to Via Mazzini 10” · “skip” · “stop”'
+  };
+
+  const EN_RULES = [
+    [/^Tappa (\d+)$/, 'Stop $1'],
+    [/^1 tappe$/, '1 stop'],
+    [/^(\d+) tappe$/, '$1 stops'],
+    [/^(\d+) tappa$/, '$1 stop'],
+    [/^(\d+) fatte$/, '$1 done'],
+    [/^(\d+) saltate$/, '$1 skipped'],
+    [/^in corso · (\d+) da fare$/, 'in progress · $1 left'],
+    [/^arrivo (.+)$/, 'arrive $1'],
+    [/^Oggi: (.+)$/, 'Today: $1'],
+    [/^incassato (.+)$/, 'collected $1'],
+    [/^(\d+) non pagata$/, '$1 not paid'],
+    [/^(\d+) non pagate$/, '$1 not paid'],
+    [/^(\d+) non consegnata$/, '$1 not delivered'],
+    [/^(\d+) non consegnate$/, '$1 not delivered'],
+    [/^Coordinate: (.+)$/, 'Coordinates: $1'],
+    [/^Riprova indirizzi mancanti \((\d+)\)$/, 'Retry missing addresses ($1)'],
+    [/^Ricalcola posizioni \((\d+)\)$/, 'Recalculate positions ($1)'],
+    [/^(Incolla le coordinate.*)$/, 'Paste the coordinates (e.g. 43.86123, 10.24011) or a Google Maps link with @lat,lng:'],
+    [/^Aggiunta: (.+)$/, 'Added: $1'],
+    [/^Saltata: (.+)$/, 'Skipped: $1'],
+    [/^Arrivato: (.+)$/, 'Arrived: $1'],
+    [/^Arrivato · prossima: (.+)$/, 'Arrived · next: $1'],
+    [/^Esito: (.+)$/, 'Outcome: $1'],
+    [/^Importate (.+)$/, 'Imported $1'],
+    [/^Mancano (.+)$/, 'Remaining $1'],
+    [/^Offline pronto · (.+)$/, 'Offline ready · $1'],
+    [/^Chiave valida · (.+)$/, 'Valid key · $1'],
+    [/^Cerco “(.+)”…$/, 'Searching “$1”…'],
+    [/^Non trovo “(.+)”: cercala a mano con \+ Aggiungi$/, 'Cannot find “$1”: add it by hand with + Add'],
+    [/^Non trovo “(.+)”$/, 'Cannot find “$1”'],
+    [/^Giro completato (.+)$/, 'Round complete $1']
+  ];
+
+  function tr(s) {
+    if (LANG !== 'en' || !s) return s;
+    const k = String(s).trim();
+    if (!k) return s;
+    for (let i = 0; i < EN_RULES.length; i++) {
+      const re = EN_RULES[i][0];
+      if (re.test(k)) {
+        const out = k.replace(re, EN_RULES[i][1]);
+        return String(s).replace(k, out);
+      }
+    }
+    const hit = EN_TEXT[k];
+    return hit ? String(s).replace(k, hit) : s;
+  }
+
+  const SKIP_SEL = '.stop-addr,.stop-note,.stop-out,.out-chip,textarea,input,select,option,code,pre,.name,.city,#eta-stop,#giro-name,#giro-city,#nb-title,#nb-sub,.log-n';
+  const ATTRS = ['placeholder', 'title', 'aria-label'];
+
+  const L = (it, en) => (LANG === 'en' ? en : it);
+
+  function applyLang() {
+    document.documentElement.lang = LANG;
+    const it = $('#lang-it'), en = $('#lang-en');
+    if (it) it.classList.toggle('on', LANG === 'it');
+    if (en) en.classList.toggle('on', LANG === 'en');
+    if (S.giro) { renderGiroChrome(); renderStops(); updateEta(); }
+    renderHome();
+    localizeText(document.body);
+  }
+
+  function setLang(l) {    const next = l === 'en' ? 'en' : 'it';
+    if (next === LANG) return;
+    LANG = next;
+    if (db && db.settings) { db.settings.lang = next; saveDB(); }
+    voiceIt = null;
+    applyLang();
+    toast(next === 'en' ? 'Language: English' : 'Lingua: italiano', 'good');
+  }
+
+
+  function localizeText(root) {
+    const scope = root || document.body;
+    const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT, null);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach((n) => {
+      const p = n.parentElement;
+      if (!p || p.closest(SKIP_SEL)) return;
+      const v = n.nodeValue;
+      if (!v || !v.trim()) return;
+      if (LANG === 'en') {
+        const out = tr(v);
+        if (out !== v) { if (n.__it == null) n.__it = v; n.nodeValue = out; }
+      } else if (n.__it != null) {
+        n.nodeValue = n.__it; n.__it = null;
+      }
+    });
+    scope.querySelectorAll('[placeholder],[title],[aria-label]').forEach((el) => {
+      ATTRS.forEach((a) => {
+        const v = el.getAttribute(a);
+        if (!v || !v.trim()) return;
+        if (LANG === 'en') {
+          const out = tr(v);
+          if (out !== v) {
+            if (!el.__it) el.__it = {};
+            if (el.__it[a] == null) el.__it[a] = v;
+            el.setAttribute(a, out);
+          }
+        } else if (el.__it && el.__it[a] != null) {
+          el.setAttribute(a, el.__it[a]);
+          delete el.__it[a];
+        }
+      });
+    });
+  }
+
   function toast(msg, kind) {
     const box = $('#toasts');
     const el = document.createElement('div');
     el.className = 'toast' + (kind ? ' ' + kind : '');
-    el.innerHTML = msg;
+    el.innerHTML = LANG === 'en' ? tr(String(msg)) : msg;
     box.appendChild(el);
     setTimeout(() => { el.style.transition = 'opacity .3s, transform .3s'; el.style.opacity = '0'; el.style.transform = 'translateY(-6px)'; }, 3200);
     setTimeout(() => el.remove(), 3600);
@@ -676,7 +1167,7 @@ b,strong{font-weight:700}
   /* =============================== B. DATI =============================== */
   const DB_KEY = 'pasomaps.db.v1';
   const DEFAULT_TRUCK = { height: 2.8, width: 2.1, length: 6.0, weight: 3.5, axle_load: 1.8 };
-  const DEFAULT_SETTINGS = { voice: true, brightness: 1, autoAdvance: true, ztlWarn: true, trafficKey: '', tomtomKey: '', mapStyle: 4, mapProvider: 'openfreemap', lastGiroId: null };
+  const DEFAULT_SETTINGS = { voice: true, brightness: 1, autoAdvance: true, ztlWarn: true, trafficKey: '', tomtomKey: '', mapStyle: 4, mapProvider: 'openfreemap', lastGiroId: null, lang: 'it' };
   const PALETTE = ['#3b82f6', '#22d3ee', '#a78bfa', '#f472b6', '#f59e0b', '#34d399', '#60a5fa', '#fb7185', '#c084fc', '#facc15', '#2dd4bf', '#f97316', '#818cf8', '#4ade80'];
   const APP_BUILD = (() => {
     try {
@@ -1413,13 +1904,14 @@ b,strong{font-weight:700}
       el.addEventListener('pointercancel', () => { if (t) clearTimeout(t); });
       el.addEventListener('pointermove', () => { if (t) { clearTimeout(t); t = null; } });
     });
+    if (LANG === 'en') localizeText(box);
   }
 
   /* =============================== H. APRI GIRO =============================== */
   function openFreeMode() {
     openModal('' +
       '<div class="modal-head"><b>Modalità libera</b><button class="x" id="fm-close">✕</button></div>' +
-      '<p class="hint" style="margin-top:-6px">Navigatore normale: <b>le autostrade sono permesse</b>. Scrivi la destinazione e tocca il risultato.</p>' +
+      '<p class="hint" style="margin-top:-6px">' + L('Navigatore normale: <b>le autostrade sono permesse</b>. Scrivi la destinazione e tocca il risultato.', 'Normal navigator: <b>motorways are allowed</b>. Type the destination and tap the result.') + '</p>' +
       '<div class="field"><label>Dove vai?</label>' +
       '<div class="row"><input id="fm-q" placeholder="Via, numero, città" autocomplete="off" spellcheck="false"><button class="btn" id="fm-search" style="flex:0 0 auto;padding:12px 14px">Cerca</button></div>' +
       '<div class="results" id="fm-res"></div></div>');
@@ -1512,12 +2004,13 @@ b,strong{font-weight:700}
     const skipped = S.session ? S.session.skipped.length : 0;
     const city = g.city || '';
     if (S.allowHighways) {
-      $('#giro-city').textContent = 'Navigazione libera · autostrade permesse';
+      $('#giro-city').textContent = tr('Navigazione libera · autostrade permesse');
     } else {
-      $('#giro-city').textContent = [city, g.stops.length + ' tappe', done ? done + ' fatte' : '', skipped ? skipped + ' saltate' : '']
-        .filter(Boolean).join(' · ') || 'nessuna tappa';
+      $('#giro-city').textContent = [city, tr(g.stops.length === 1 ? '1 tappa' : g.stops.length + ' tappe'), done ? tr(done + ' fatte') : '', skipped ? tr(skipped + ' saltate') : '']
+        .filter(Boolean).join(' · ') || tr('nessuna tappa');
     }
     $('#fab-badge').textContent = activeStops().length;
+    if (LANG === 'en') localizeText($('#s-giro'));
   }
 
   /* =============================== I. PERCORSO =============================== */
@@ -1543,7 +2036,7 @@ b,strong{font-weight:700}
 
   function setRouteState(text, cls) {
     const el = $('#route-state');
-    el.textContent = text;
+    el.textContent = LANG === 'en' ? tr(text) : text;
     el.className = 'map-hint' + (cls ? ' ' + cls : '');
     el.classList.remove('hide');
   }
@@ -1877,26 +2370,27 @@ b,strong{font-weight:700}
         $('#eta-unit').textContent = '';
         $('#eta-km').textContent = '0 tappe';
         $('#eta-arr').textContent = '';
-        $('#eta-stop').textContent = 'Aggiungi la prima tappa con “+ Aggiungi”';
+        $('#eta-stop').textContent = LANG === 'en' ? 'Add the first stop with “+ Add”' : 'Aggiungi la prima tappa con “+ Aggiungi”';
       } else if (noPos === any) {
         $('#eta-label').textContent = 'Tappe senza posizione';
         $('#eta-time').textContent = '!';
         $('#eta-unit').textContent = '';
         $('#eta-km').textContent = noPos + ' tappe';
         $('#eta-arr').textContent = '';
-        $('#eta-stop').textContent = 'Apri Tappe → “Riprova indirizzi mancanti”';
+        $('#eta-stop').textContent = LANG === 'en' ? 'Open Stops → “Retry missing addresses”' : 'Apri Tappe → “Riprova indirizzi mancanti”';
       } else {
         $('#eta-label').textContent = 'Giro finito';
         $('#eta-time').textContent = '✓';
         $('#eta-unit').textContent = '';
         $('#eta-km').textContent = any + ' tappe';
         $('#eta-arr').textContent = 'tutte fatte';
-        $('#eta-stop').textContent = 'Nessuna tappa rimasta';
+        $('#eta-stop').textContent = LANG === 'en' ? 'No stops left' : 'Nessuna tappa rimasta';
       }
       const sep = $('.eta-sub .sep');
       if (sep) sep.style.display = $('#eta-arr').textContent ? '' : 'none';
       $('#btn-nav').disabled = true;
       $('#btn-nav').style.opacity = '.35';
+      if (LANG === 'en') localizeText($('.bottom-panel'));
       return;
     }
     const sep2 = $('.eta-sub .sep');
@@ -1924,6 +2418,7 @@ b,strong{font-weight:700}
       $('#eta-unit').textContent = 'min';
       $('#eta-km').textContent = '-- km';
       $('#eta-arr').textContent = '--:--';
+      if (LANG === 'en') localizeText($('.bottom-panel'));
       return;
     }
     const tp = timeParts(sec);
@@ -1936,6 +2431,7 @@ b,strong{font-weight:700}
     if (S.previewFromMe && S.shownRoute && S.shownRoute.legs[0]) delayShow = S.shownRoute.legs[0].delay || 0;
     else if (S.shownRoute) delayShow = S.shownRoute.trafficDelay || 0;
     paintEtaTraffic(delayShow);
+    if (LANG === 'en') localizeText($('.bottom-panel'));
   }
 
   function paintEtaTraffic(delaySec) {
@@ -1944,7 +2440,8 @@ b,strong{font-weight:700}
     if (!el || !lb) return;
     if (delaySec > 120) {
       el.style.color = '#f5a623';
-      if (lb.textContent.indexOf('traffico') === -1) lb.textContent = lb.textContent + ' · traffico +' + Math.round(delaySec / 60) + ' min';
+      const has = LANG === 'en' ? 'traffic' : 'traffico';
+      if (lb.textContent.indexOf(has) === -1) lb.textContent = lb.textContent + (LANG === 'en' ? ' · traffic +' : ' · traffico +') + Math.round(delaySec / 60) + ' min';
     } else {
       el.style.color = '';
     }
@@ -1974,10 +2471,12 @@ b,strong{font-weight:700}
   function outcomeLong(oc) {
     const d = OUTCOMES[oc.code];
     if (!d) return '';
-    if (oc.code === 'paid') return 'Ha pagato ' + eur(oc.amount);
-    if (oc.code === 'ok') return 'Consegnata';
-    if (oc.code === 'unpaid') return 'Consegnata · non ha pagato';
-    return d.label;
+    const en = LANG === 'en';
+    if (oc.code === 'paid') return (en ? 'Paid ' : 'Ha pagato ') + eur(oc.amount);
+    if (oc.code === 'ok') return en ? 'Delivered' : 'Consegnata';
+    if (oc.code === 'unpaid') return en ? 'Delivered · not paid' : 'Consegnata · non ha pagato';
+    if (oc.code === 'absent') return en ? 'Customer not in' : 'Cliente non presente';
+    return en ? 'Not delivered' : 'Non consegnata';
   }
 
   /* =============================== K. SHEET TAPPE =============================== */
@@ -2079,6 +2578,7 @@ b,strong{font-weight:700}
       body.scrollTop = prevTop;
     }
     paintOutcomeSummary(sess);
+    if (LANG === 'en') localizeText($('#sheet'));
   }
 
   function paintOutcomeSummary(sess) {
@@ -2095,12 +2595,13 @@ b,strong{font-weight:700}
       else if (o.code === 'absent' || o.code === 'failed') notDel++;
     });
     if (!n) { el.hidden = true; el.textContent = ''; return; }
+    const en = LANG === 'en';
     const parts = [];
-    if (cash > 0) parts.push('incassato ' + eur(cash));
-    if (unpaid) parts.push(unpaid + (unpaid === 1 ? ' non pagata' : ' non pagate'));
-    if (notDel) parts.push(notDel + (notDel === 1 ? ' non consegnata' : ' non consegnate'));
+    if (cash > 0) parts.push((en ? 'collected ' : 'incassato ') + eur(cash));
+    if (unpaid) parts.push(unpaid + (en ? ' not paid' : (unpaid === 1 ? ' non pagata' : ' non pagate')));
+    if (notDel) parts.push(notDel + (en ? ' not delivered' : (notDel === 1 ? ' non consegnata' : ' non consegnate')));
     el.hidden = !parts.length;
-    el.textContent = parts.length ? 'Oggi: ' + parts.join(' · ') : '';
+    el.textContent = parts.length ? (en ? 'Today: ' : 'Oggi: ') + parts.join(' · ') : '';
   }
 
   /* =============================== L. EDITOR TAPPA =============================== */
@@ -2550,7 +3051,7 @@ b,strong{font-weight:700}
     const urls = [];
     const clearUrls = () => { urls.forEach((u) => { try { URL.revokeObjectURL(u); } catch (e) { } }); urls.length = 0; };
     openModal('' +
-      '<div class="modal-head"><b>Foto · ' + esc(st.name || st.address || 'tappa') + '</b><button class="x" id="ph-close">✕</button></div>' +
+      '<div class="modal-head"><b>' + L('Foto · ', 'Photo · ') + esc(st.name || st.address || 'tappa') + '</b><button class="x" id="ph-close">✕</button></div>' +
       '<div class="photo-grid" id="ph-grid"><div class="photo-empty">Carico…</div></div>' +
       '<div class="photo-acts">' +
       '<button class="btn primary" id="ph-cam">📷 Scatta foto</button>' +
@@ -2558,7 +3059,8 @@ b,strong{font-weight:700}
       '</div>' +
       '<input type="file" id="ph-in-cam" accept="image/*" capture="environment" hidden>' +
       '<input type="file" id="ph-in-gal" accept="image/*" multiple hidden>' +
-      '<p class="hint" style="margin-top:10px">Le foto restano <b>solo su questo telefono</b>: non entrano nel backup dei giri e non vanno su internet. Se cancelli la tappa, spariscono.</p>' +
+      '<p class="hint" style="margin-top:10px">' + L('Le foto restano <b>solo su questo telefono</b>: non entrano nel backup dei giri e non vanno su internet. Se cancelli la tappa, spariscono.',
+        'Photos stay <b>on this phone only</b>: they are not part of the round backup and never go online. If you delete the stop, they are gone.') + '</p>' +
       '<div class="btn-row"><button class="btn" id="ph-done">Chiudi</button></div>');
 
     async function render() {
@@ -2569,7 +3071,8 @@ b,strong{font-weight:700}
       items.sort((a, b) => (b.at || 0) - (a.at || 0));
       clearUrls();
       if (!items.length) {
-        grid.innerHTML = '<div class="photo-empty">Nessuna foto.<br>Scatta la prova di consegna: pacco, portone, ricevuta.</div>';
+        grid.innerHTML = L('<div class="photo-empty">Nessuna foto.<br>Scatta la prova di consegna: pacco, portone, ricevuta.</div>',
+          '<div class="photo-empty">No photos.<br>Take proof of delivery: parcel, door, receipt.</div>');
         return;
       }
       grid.innerHTML = items.map((it) => {
@@ -2651,7 +3154,7 @@ b,strong{font-weight:700}
       { c: 'failed', ic: '✕', t: 'Non consegnata', wide: true }
     ];
     openModal('' +
-      '<div class="modal-head"><b>Esito · ' + esc(st.name || st.address || 'tappa') + '</b><button class="x" id="o-close">✕</button></div>' +
+      '<div class="modal-head"><b>' + L('Esito · ', 'Outcome · ') + esc(st.name || st.address || 'tappa') + '</b><button class="x" id="o-close">✕</button></div>' +
       '<p class="hint" style="margin-top:-6px">Tocca com’è andata: la tappa viene segnata da sola come fatta o saltata, e l’incassato si somma nella lista tappe.</p>' +
       '<div class="out-grid" id="o-grid">' + opts.map((o) => '<button data-code="' + o.c + '"' + (o.wide ? ' class="wide"' : '') + '><span class="ic">' + o.ic + '</span>' + o.t + '</button>').join('') + '</div>' +
       '<div class="field" id="o-amt-wrap" style="display:none"><label>Quanto ha pagato (€)</label><input id="o-amt" type="text" inputmode="decimal" autocomplete="off" placeholder="es. 45,50" value="' + ((cur && cur.code === 'paid' && cur.amount) ? esc((Math.abs(cur.amount % 1) < 0.005 ? String(Math.round(cur.amount)) : Number(cur.amount).toFixed(2)).replace('.', ',')) : '') + '"></div>' +
@@ -2732,13 +3235,15 @@ b,strong{font-weight:700}
     if (!db.settings.voice || !('speechSynthesis' in window)) return;
     try {
       window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'it-IT';
+      const u = new SpeechSynthesisUtterance(LANG === 'en' ? tr(text) : text);
+      u.lang = LANG === 'en' ? 'en-GB' : 'it-IT';
       u.rate = 0.98;
       u.pitch = 1;
       if (!voiceIt) {
         const vs = window.speechSynthesis.getVoices() || [];
-        voiceIt = vs.find((v) => /it[-_]IT/i.test(v.lang)) || vs.find((v) => /^it/i.test(v.lang)) || null;
+        voiceIt = LANG === 'en'
+          ? (vs.find((v) => /en[-_]GB/i.test(v.lang)) || vs.find((v) => /^en/i.test(v.lang)) || null)
+          : (vs.find((v) => /it[-_]IT/i.test(v.lang)) || vs.find((v) => /^it/i.test(v.lang)) || null);
       }
       if (voiceIt) u.voice = voiceIt;
       window.speechSynthesis.speak(u);
@@ -3025,13 +3530,17 @@ b,strong{font-weight:700}
       b.className = 'btn';
       b.id = 'nav-osmand';
       b.style.padding = '16px';
-      b.innerHTML = '🟠 Apri OsmAnd <small style="color:#8fa1bd;font-weight:400">(offline, profili camion)</small>';
+      b.innerHTML = LANG === 'en'
+        ? '🟠 Open OsmAnd <small style="color:#8fa1bd;font-weight:400">(offline, truck profiles)</small>'
+        : '🟠 Apri OsmAnd <small style="color:#8fa1bd;font-weight:400">(offline, profili camion)</small>';
       b.addEventListener('click', () => { $('#navmenu').classList.remove('on'); if (S.pendingStop) openOsmAndFor(S.pendingStop); });
       $('#nav-google').parentNode.insertBefore(b, $('#nav-google').nextSibling);
     }
     const hint = $('#navmenu .hint');
     if (hint) {
-      hint.innerHTML = 'La navigazione in app rispetta <b>altezza, peso e larghezza</b> del mezzo. Google Maps accetta “evita autostrade”, ma non conosce le misure del camioncino. OsmAnd funziona <b>offline</b> e ha profili camion, ma va configurato a mano (profilo mezzo, ZTL): il tasto apre il selettore app di Android, scegli OsmAnd.';
+      hint.innerHTML = LANG === 'en'
+        ? 'In-app navigation respects the vehicle <b>height, weight and width</b>. Google Maps accepts “avoid motorways” but does not know your van size. OsmAnd works <b>offline</b> and has truck profiles, but must be set up by hand (vehicle profile, ZTL): the button opens the Android app picker, choose OsmAnd.'
+        : 'La navigazione in app rispetta <b>altezza, peso e larghezza</b> del mezzo. Google Maps accetta “evita autostrade”, ma non conosce le misure del camioncino. OsmAnd funziona <b>offline</b> e ha profili camion, ma va configurato a mano (profilo mezzo, ZTL): il tasto apre il selettore app di Android, scegli OsmAnd.';
     }
     $('#navmenu').classList.add('on');
   }
@@ -3071,7 +3580,7 @@ b,strong{font-weight:700}
     try { window.speechSynthesis.cancel(); } catch (e) { }
     try {
       rec = new SRClass();
-      rec.lang = 'it-IT';
+      rec.lang = LANG === 'en' ? 'en-GB' : 'it-IT';
       rec.interimResults = true;
       rec.continuous = false;
       rec.maxAlternatives = 1;
@@ -3248,6 +3757,7 @@ b,strong{font-weight:700}
   function openModal(html) {
     $('#modal-card').innerHTML = html;
     $('#modal').classList.add('on');
+    if (LANG === 'en') localizeText($('#modal-card'));
     $('#modal').onclick = (e) => { if (e.target === $('#modal')) closeModal(); };
   }
   function closeModal() {
@@ -3331,7 +3841,7 @@ b,strong{font-weight:700}
     const html = '' +
       '<div class="modal-head"><b>Impostazioni</b><button class="x" id="s-close">✕</button></div>' +
       '<div class="section-t">Il mio camioncino</div>' +
-      '<p class="hint" style="margin-top:0">Servono per evitare sottopassi bassi e strade vietate ai mezzi pesanti.</p>' +
+      '<p class="hint" style="margin-top:0">' + L('Servono per evitare sottopassi bassi e strade vietate ai mezzi pesanti.', 'Used to avoid low bridges and roads closed to heavy vehicles.') + '</p>' +
       '<div class="row"><div class="field"><label>Altezza (m)</label><input id="t-h" type="number" step="0.1" value="' + t.height + '"></div>' +
       '<div class="field"><label>Larghezza (m)</label><input id="t-w" type="number" step="0.1" value="' + t.width + '"></div></div>' +
       '<div class="row"><div class="field"><label>Lunghezza (m)</label><input id="t-l" type="number" step="0.1" value="' + t.length + '"></div>' +
@@ -3342,29 +3852,31 @@ b,strong{font-weight:700}
       '<div class="switch"><div class="lbl">Avvisa ZTL/divieti locali<small>Toast quando avvi la navigazione in una città</small></div><button class="tgl ' + (db.settings.ztlWarn !== false ? 'on' : '') + '" id="s-ztl"></button></div>' +
       '<div class="switch"><div class="lbl">Autostrade<small>Bloccate: i percorsi non le usano mai. Statali e provinciali sì.</small></div><button class="tgl on locked" id="s-hw" style="opacity:.55"></button></div>' +
       '<div class="section-t">Mappa</div>' +
-      '<div class="field"><label>Luminosità mappa</label><input id="s-bright" type="range" min="0.7" max="1.3" step="0.05" value="' + db.settings.brightness + '"><div class="hint">La mappa è chiara; il resto dell’app resta scuro.</div></div>' +
+      '<div class="field"><label>Luminosità mappa</label><input id="s-bright" type="range" min="0.7" max="1.3" step="0.05" value="' + db.settings.brightness + '"><div class="hint">' + L('La mappa è chiara; il resto dell’app resta scuro.', 'The map stays light; the rest of the app stays dark.') + '</div></div>' +
       '<div class="field"><label>Base mappa</label><div class="chips" id="s-map-provider">' +
       '<button data-p="openfreemap">OpenFreeMap</button><button data-p="osm">OpenStreetMap</button><button data-p="tomtom">TomTom</button></div>' +
-      '<div class="hint">OpenFreeMap è vettoriale, gratuita e senza chiave: è quella che abilita il 3D. OpenStreetMap e TomTom sono raster (nessun 3D); TomTom usa la chiave qui sopra.</div></div>' +
+      '<div class="hint">' + L('OpenFreeMap è vettoriale, gratuita e senza chiave: è quella che abilita il 3D. OpenStreetMap e TomTom sono raster (nessun 3D); TomTom usa la chiave qui sopra.', 'OpenFreeMap is vector, free and needs no key: it is the one that enables 3D. OpenStreetMap and TomTom are raster (no 3D); TomTom uses the key below.') + '</div></div>' +
       '<div class="section-t">Traffico (TomTom)</div>' +
       '<div class="field"><label>Chiave API TomTom</label>' +
       '<input id="s-tt" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="incolla qui la chiave" value="' + esc(db.settings.tomtomKey || '') + '">' +
-      '<div class="hint">Con la chiave i tempi e i tratti colorati usano il traffico TomTom. La chiave resta <b>solo su questo telefono</b> e non finisce nel backup né nel repository. Senza chiave l’app funziona come prima, con tempi senza traffico.<br><br>La chiave è <b>consigliata</b>: senza di essa l’import degli indirizzi trova meno civici e più lenta (usa Nominatim). TomTom è gratuito e basta per un uso personale.</div></div>' +
+      '<div class="hint">' + L('Con la chiave i tempi e i tratti colorati usano il traffico TomTom. La chiave resta <b>solo su questo telefono</b> e non finisce nel backup né nel repository. Senza chiave l\'app funziona come prima, con tempi senza traffico.<br><br>La chiave è <b>consigliata</b>: senza di essa l\'import degli indirizzi trova meno civici ed è più lento (usa Nominatim). TomTom è gratuito e basta per un uso personale.', 'With the key, times and coloured segments use TomTom traffic. The key stays <b>on this phone only</b> and is never written to the backup or the repository. Without a key the app works as before, with times that ignore traffic.<br><br>The key is <b>recommended</b>: without it address import finds fewer house numbers and is slower (it uses Nominatim). TomTom is free and enough for personal use.') + '</div></div>' +
       '<div class="btn-row"><button class="btn" id="s-tt-verify">Verifica chiave</button><button class="btn" id="s-tt-clear">Rimuovi</button></div>' +
       '<div class="section-t">Dati</div>' +
       (function () {
         const d = db.lastExport ? Date.now() - db.lastExport : null;
         const days = d == null ? null : Math.floor(d / 864e5);
-        return days == null ? '' : ('<p class="hint" style="margin:0 0 8px">Ultimo backup: ' + (days < 1 ? 'oggi' : days + (days === 1 ? ' giorno' : ' giorni') + ' fa') + (days >= 7 ? ' · <span style="color:#ffb4b4">Fai un backup</span>' : '') + '</p>');
+        if (days == null) return '';
+        if (LANG === 'en') return '<p class="hint" style="margin:0 0 8px">Last backup: ' + (days < 1 ? 'today' : days + (days === 1 ? ' day' : ' days') + ' ago') + (days >= 7 ? ' · <span style="color:#ffb4b4">Make a backup</span>' : '') + '</p>';
+        return '<p class="hint" style="margin:0 0 8px">Ultimo backup: ' + (days < 1 ? 'oggi' : days + (days === 1 ? ' giorno' : ' giorni') + ' fa') + (days >= 7 ? ' · <span style="color:#ffb4b4">Fai un backup</span>' : '') + '</p>';
       })() +
       '<div class="btn-row"><button class="btn" id="s-export">Esporta backup</button><button class="btn" id="s-import">Importa</button></div>' +
       '<button class="btn" id="s-reset-day" style="width:100%;margin-top:9px">Azzera il giro di oggi</button>' +
       '<button class="btn" id="s-update" style="width:100%;margin-top:9px">Forza aggiornamento app</button>' +
       '<button class="btn" id="s-changelog" style="width:100%;margin-top:9px">📋 Cosa è cambiato (dalla build 40)</button>' +
       '<button class="btn danger" id="s-wipe" style="width:100%;margin-top:9px">Cancella tutti i dati</button>' +
-      '<p class="hint">I dati stanno solo in questo telefono: se cancelli la cache del browser o cambi telefono, senza backup li perdi. <b>Le foto delle consegne non entrano nel backup</b>: per tenerle, scaricale dalla foto stessa (⬇).</p>' +
+      '<p class="hint">' + L('I dati stanno solo in questo telefono: se cancelli la cache del browser o cambi telefono, senza backup li perdi. <b>Le foto delle consegne non entrano nel backup</b>: per tenerle, scaricale dalla foto stessa (⬇).', 'Data lives on this phone only: if you clear the browser cache or change phone, without a backup it is lost. <b>Delivery photos are not part of the backup</b>: to keep them, download them from the photo itself (⬇).') + '</p>' +
       '<div class="section-t">Info</div>' +
-      '<p class="hint">Versione <b>' + APP_BUILD + '</b> · mappa MapLibre + OpenFreeMap.<br>Base: OpenStreetMap + Valhalla (profilo camion, autostrade escluse). Con la chiave TomTom, percorso e tempi usano TomTom con <b>traffico live</b>, sempre con camion e autostrade escluse; se TomTom non risponde l’app torna da sola al calcolo senza traffico.<br><br>Il routing conosce altezza, larghezza, lunghezza e peso del mezzo, ma <b>non tutte le ordinanze locali, ZTL o divieti temporanei</b>: la segnaletica sul posto resta l’unica verità.</p>';
+      '<p class="hint">' + L('Versione <b>' + APP_BUILD + '</b> · mappa MapLibre + OpenFreeMap.<br>Base: OpenStreetMap + Valhalla (profilo camion, autostrade escluse). Con la chiave TomTom, percorso e tempi usano TomTom con <b>traffico live</b>, sempre con camion e autostrade escluse; se TomTom non risponde l’app torna da sola al calcolo senza traffico.<br><br>Il routing conosce altezza, larghezza, lunghezza e peso del mezzo, ma <b>non tutte le ordinanze locali, ZTL o divieti temporanei</b>: la segnaletica sul posto resta l’unica verità.', 'Version <b>' + APP_BUILD + '</b> · MapLibre + OpenFreeMap map.<br>Base data: OpenStreetMap + Valhalla (truck profile, motorways excluded). With the TomTom key, route and times use TomTom with <b>live traffic</b>, still truck profile and no motorways; if TomTom does not answer the app falls back to traffic-free routing by itself.<br><br>Routing knows the vehicle height, width, length and weight, but <b>not every local by-law, ZTL or temporary closure</b>: signs on the ground remain the only truth.') + '</p>';
     openModal(html);
     $('#s-close').addEventListener('click', closeModal);
     const bindTruck = (id, key, min, max) => $('#' + id).addEventListener('change', (e) => {
@@ -3650,18 +4162,23 @@ b,strong{font-weight:700}
   function openImportModal() {
     openModal('' +
       '<div class="modal-head"><b>Importa elenco giro</b><button class="x" id="i-close">✕</button></div>' +
-      '<p class="hint" style="margin-top:-6px">Incolla il testo o scegli il file. <b>Una riga = una tappa</b>. Una riga con “Giro …”, “Giorno …”, “Lunedì …” apre un nuovo giro. Esempio:<br><code>Giro 1 - Verona</code><br><code>Via Roma 1 - Rossi</code><br><code>Via Mazzini 10 (piano 3, citofono)</code></p>' +
+      '<p class="hint" style="margin-top:-6px">' + L('Incolla il testo o scegli il file. <b>Una riga = una tappa</b>. Una riga con “Giro …”, “Giorno …”, “Lunedì …” apre un nuovo giro. Esempio:<br><code>Giro 1 - Verona</code><br><code>Via Roma 1 - Rossi</code><br><code>Via Mazzini 10 (piano 3, citofono)</code>',
+        'Paste the text or choose a file. <b>One line = one stop</b>. A line with “Round …”, “Day …”, “Monday …” starts a new round. Example:<br><code>Round 1 - Verona</code><br><code>Via Roma 1 - Rossi</code><br><code>Via Mazzini 10 (floor 3, buzzer)</code>') + '</p>' +
       '<details style="margin:0 0 6px"><summary style="cursor:pointer;color:#9db4d6;font-size:12px">Formati accettati e come prepararli</summary>' +
-      '<div class="hint" style="margin-top:7px;line-height:1.55">' +
+      '<div class="hint" style="margin-top:7px;line-height:1.55">' + L('' +
       '<b>.txt</b> — Notepad del telefono: una riga per indirizzo, salva come testo. È il formato più affidabile.<br>' +
       '<b>.csv</b> — da Excel o Fogli Google “Salva come / Scarica → CSV”. Se la prima riga ha intestazioni tipo <i>Cliente, Indirizzo, Note, Giro</i>, le uso per sistemare le colonne.<br>' +
       '<b>.pdf</b> — solo se il testo si può selezionare col dito (non scansioni o fotografie). Il PDF viene letto e copiato qui sotto: <b>controlla sempre il riepilogo</b> prima di importare. Per leggere un PDF serve la rete.<br>' +
-      '<b>Excel .xlsx</b> — non supportato direttamente: salvalo in CSV.' +
+      '<b>Excel .xlsx</b> — non supportato direttamente: salvalo in CSV.',
+      '<b>.txt</b> — phone Notepad: one address per line, save as text. The most reliable format.<br>' +
+      '<b>.csv</b> — from Excel or Google Sheets “Save as / Download → CSV”. If the first row has headers like <i>Customer, Address, Notes, Round</i>, they are used to sort the columns.<br>' +
+      '<b>.pdf</b> — only if the text can be selected with your finger (not scans or photos). The PDF is read and copied below: <b>always check the summary</b> before importing. Reading a PDF needs the network.<br>' +
+      '<b>Excel .xlsx</b> — not supported directly: save it as CSV.') +
       '</div></details>' +
       '<div class="field"><label>Elenco</label><textarea id="i-text" style="min-height:150px" placeholder="Giro 1 - Verona&#10;Via Roma 1 - Rossi&#10;Via Mazzini 10 (piano 3)&#10;&#10;Giro 2 - Vicenza&#10;..."></textarea>' +
       '<div class="chips" style="margin-top:8px"><button id="i-file">📄 Scegli file (.txt .csv .pdf)</button><button id="i-clear">Svuota</button></div></div>' +
-      '<div class="field"><label>Zona (città)</label><input id="i-zone" placeholder="es. Viareggio"><div class="hint">La ricerca resta entro ~35 km da questa città. Se il giro si chiama come la città (“Viareggio” o “Viareggio Marco Polo”) viene usata quella; se si chiama “Giro 1”, scrivila qui.</div></div>' +
-      '<div class="switch" style="border-bottom:0;padding-top:0"><div class="lbl">Cerca le coordinate<small>' + (tomtomReady() ? 'Con la chiave TomTom i civici sono più precisi.' : 'Senza chiave TomTom uso OpenStreetMap: più lento e con meno civici.') + '</small></div><button class="tgl ' + (tomtomReady() ? 'on' : '') + '" id="i-geo"></button></div>' +
+      '<div class="field"><label>Zona (città)</label><input id="i-zone" placeholder="es. Viareggio"><div class="hint">' + L('La ricerca resta entro ~35 km da questa città. Se il giro si chiama come la città (“Viareggio” o “Viareggio Marco Polo”) viene usata quella; se si chiama “Giro 1”, scrivila qui.', 'Search stays within ~35 km of this city. If the round is named after the city (“Viareggio” or “Viareggio Marco Polo”) that one is used; if it is called “Round 1”, type it here.') + '</div></div>' +
+      '<div class="switch" style="border-bottom:0;padding-top:0"><div class="lbl">Cerca le coordinate<small>' + (tomtomReady() ? L('Con la chiave TomTom i civici sono più precisi.', 'With the TomTom key house numbers are more precise.') : L('Senza chiave TomTom uso OpenStreetMap: più lento e con meno civici.', 'Without a TomTom key OpenStreetMap is used: slower and with fewer house numbers.')) + '</small></div><button class="tgl ' + (tomtomReady() ? 'on' : '') + '" id="i-geo"></button></div>' +
       '<div id="i-preview" class="hint"></div>' +
       '<div class="btn-row"><button class="btn" id="i-cancel">Annulla</button><button class="btn primary" id="i-run">Importa</button></div>');
     let geoOn = tomtomReady();
@@ -4159,7 +4676,7 @@ b,strong{font-weight:700}
     if (!j || !Array.isArray(j.builds)) return;
     const entry = j.builds.find((b) => b.build === cur);
     if (!entry || !Array.isArray(entry.changes) || !entry.changes.length) return;
-    openModal('<div class="modal-head"><b>Cosa è cambiato · build ' + cur + '</b><button class="x" id="n-close">✕</button></div>' +
+    openModal('<div class="modal-head"><b>' + L('Cosa è cambiato · build ' + cur, 'What changed · build ' + cur) + '</b><button class="x" id="n-close">✕</button></div>' +
       '<ul class="news-list">' + entry.changes.map((c) => '<li>' + esc(c) + '</li>').join('') + '</ul>' +
       '<button class="btn" id="n-all" style="width:100%;margin-top:9px">Vedi tutti gli aggiornamenti dalla build 40</button>' +
       '<button class="btn primary" id="n-ok" style="width:100%;margin-top:9px">OK</button>');
@@ -4182,10 +4699,11 @@ b,strong{font-weight:700}
     const latest = list[0].build;
     openModal('' +
       '<div class="modal-head"><b>Aggiornamenti</b><button class="x" id="cl-close">✕</button></div>' +
-      '<p class="hint" style="margin-top:-6px">Dalla build <b>40</b> alla <b>' + latest + '</b>, dal più recente al più vecchio. ' +
-      (cur ? 'Su questo telefono è installata la <b>' + cur + '</b>.' : '') + '</p>' +
+      '<p class="hint" style="margin-top:-6px">' + L('Dalla build <b>40</b> alla <b>' + latest + '</b>, dal più recente al più vecchio. ',
+        'From build <b>40</b> to <b>' + latest + '</b>, newest first. ') +
+      (cur ? L('Su questo telefono è installata la <b>' + cur + '</b>.', 'This phone runs build <b>' + cur + '</b>.') : '') + '</p>' +
       list.map((b) => '<div class="log-build' + (b.build === cur ? ' now' : '') + '">' +
-        '<div class="log-n">Build ' + b.build + (b.build === cur ? ' · installata' : '') + '</div>' +
+        '<div class="log-n">Build ' + b.build + (b.build === cur ? L(' · installata', ' · installed') : '') + '</div>' +
         '<ul class="news-list">' + b.changes.map((c) => '<li>' + esc(c) + '</li>').join('') + '</ul>' +
         '</div>').join('') +
       '<div class="btn-row"><button class="btn" id="cl-done">Chiudi</button></div>');
@@ -4196,6 +4714,7 @@ b,strong{font-weight:700}
   /* =============================== P. EVENTI =============================== */
   function bind() {
     $('#btn-settings').addEventListener('click', openSettings);
+    $$('.lang-btn').forEach((b) => b.addEventListener('click', () => setLang(b.getAttribute('data-lang'))));
     $('#btn-new-giro').addEventListener('click', () => openGiroModal(null));
     $('#btn-free').addEventListener('click', openFreeMode);
     $('#btn-back').addEventListener('click', () => {
@@ -4301,9 +4820,12 @@ b,strong{font-weight:700}
   /* =============================== Q. AVVIO =============================== */
   function init() {
     db = loadDB();
+    LANG = db.settings.lang === 'en' ? 'en' : 'it';
+    document.documentElement.lang = LANG;
     applyBrightness();
     pruneRouteCache();
     renderHome();
+    applyLang();
 
     bind();
     initVoice();
@@ -4337,7 +4859,7 @@ b,strong{font-weight:700}
     if (bt) bt.textContent = APP_BUILD;
     // iOS: le voci arrivano in ritardo
     if ('speechSynthesis' in window) window.speechSynthesis.onvoiceschanged = () => { voiceIt = null; };
-    window.PasoMaps = { db: () => db, S: S, Nav: Nav, getMap: () => map, computePreview: computePreview, voice: { parse: parseVoiceCommand, run: runVoiceText }, photos: { open: openPhotos, counts: () => photoCounts, refresh: refreshPhotoCounts }, imports: { parse: parseList, pdf: pdfToText } };
+    window.PasoMaps = { db: () => db, S: S, Nav: Nav, getMap: () => map, computePreview: computePreview, voice: { parse: parseVoiceCommand, run: runVoiceText }, photos: { open: openPhotos, counts: () => photoCounts, refresh: refreshPhotoCounts }, imports: { parse: parseList, pdf: pdfToText }, lang: () => LANG, setLang: setLang };
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

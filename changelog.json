@@ -1,6 +1,17 @@
 {
   "builds": [
     {
+      "build": 65,
+      "date": "2026-11-21",
+      "changes": [
+        "App in inglese: in alto a destra della home ci sono IT e EN, la scelta resta salvata sul telefono",
+        "Tradotti menu, mappe, lista tappe, scheda tappa, esiti, foto, impostazioni, importazione e messaggi",
+        "I nomi di giri e tappe restano come li scrivi tu: non vengono tradotti",
+        "I comandi vocali capiscono ancora solo l'italiano: il riconoscimento vocale inglese non è collegato",
+        "Il riepilogo degli aggiornamenti resta in italiano"
+      ]
+    },
+    {
       "build": 61,
       "date": "2026-11-20",
       "changes": [
