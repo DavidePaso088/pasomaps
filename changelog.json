@@ -1,6 +1,17 @@
 {
   "builds": [
     {
+      "build": 70,
+      "date": "2026-11-23",
+      "changes": [
+        "Pallino della navigazione fluido: si muove tra un aggiornamento GPS e l'altro invece di saltare",
+        "La camera segue con rotazione graduale, senza scatti",
+        "Se sposti o zoomi la mappa durante la navigazione compare “◎ Riprendi” per tornare alla visuale di guida",
+        "Anche il tasto ◎ in alto riprende la navigazione, non appiattisce più la mappa",
+        "Il puntino non viene più ricreato a ogni aggiornamento: resta lo stesso elemento"
+      ]
+    },
+    {
       "build": 66,
       "date": "2026-11-21",
       "changes": [

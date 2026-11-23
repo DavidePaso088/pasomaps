@@ -178,6 +178,15 @@ b,strong{font-weight:700}
   backdrop-filter:blur(14px);
 }
 .nav-banner.on{display:flex}
+.resume-nav{
+  position:absolute;left:50%;transform:translateX(-50%);bottom:calc(122px + var(--safe-b));z-index:38;
+  display:flex;align-items:center;gap:8px;padding:11px 18px;border-radius:999px;
+  background:linear-gradient(150deg,#1d4ed8,#2563eb);color:#fff;
+  font-size:13px;font-weight:750;letter-spacing:.2px;
+  border:1px solid rgba(147,197,253,.55);box-shadow:0 12px 28px rgba(29,78,216,.5);
+}
+.resume-nav[hidden]{display:none}
+.resume-nav:active{transform:translateX(-50%) scale(.96)}
 .nav-banner .arrow{
   width:38px;height:38px;border-radius:12px;flex:0 0 auto;display:grid;place-items:center;
   background:rgba(59,130,246,.2);color:#bfe0ff;font-size:19px

@@ -381,6 +381,9 @@
     'Giorno': 'Day',
     'Oggi': 'Today',
     'Ieri': 'Yesterday',
+    'Riprendi': 'Resume',
+    'Navigazione ripresa': 'Navigation resumed',
+    'Navigazione': 'Navigation',
     '“aggiungi via Roma 1” · “portami a via Mazzini 10” · “salta” · “ferma”': '“add Via Roma 1” · “take me to Via Mazzini 10” · “skip” · “stop”'
   };
 
@@ -1147,7 +1150,10 @@
     map.on('load', () => { ensureRouteLayers(); redrawMap(); });
     map.on('style.load', () => { ensureRouteLayers(); redrawMap(); });
     map.once('idle', () => { ensureRouteLayers(); redrawMap(); });
-    map.on('dragstart', () => { S.follow = false; });
+    map.on('dragstart', (e) => { if (!e || e.originalEvent) { S.follow = false; updateFollowUI(); } });
+    ['zoomstart', 'rotatestart'].forEach((ev) => map.on(ev, (e) => {
+      if (Nav.active && (!e || e.originalEvent)) { S.follow = false; updateFollowUI(); }
+    }));
     map.on('error', (e) => {
       if (mapProvider() !== 'tomtom') return;
       if (e && e.sourceId === 'base') {
@@ -1189,7 +1195,7 @@
     pendingCompute: false,
     pendingStop: null
   };
-  const Nav = { active: false, watchId: null, route: null, busy: false, offCount: 0, spoken: {}, target: null, overrideDest: null };
+  const Nav = { active: false, watchId: null, route: null, busy: false, offCount: 0, spoken: {}, target: null, overrideDest: null, puck: null, raf: null, bear: null, lastFixAt: 0 };
 
   const hasCoords = (s) => !!s && s.lat != null && s.lng != null && isFinite(+s.lat) && isFinite(+s.lng);
 
@@ -1531,22 +1537,98 @@
     });
   }
 
+  let meEl = null;
+  let meBadge = null;
+
   function updateMeMarker() {
-    if (meMarker) { try { meMarker.remove(); } catch (e) { } meMarker = null; }
     if (!map || !S.me) return;
     const pos = (Nav.active && S.meSnap) ? S.meSnap : S.me;
-    const el = document.createElement('div');
-    el.className = 'me';
     const acc = (S.me.acc != null && isFinite(S.me.acc)) ? S.me.acc : null;
     const stale = (Date.now() - S.me.ts) > 10 * 60 * 1000;
-    if (stale || (acc != null && acc > 50)) {
-      const b = document.createElement('div');
-      b.className = 'me-badge';
-      b.textContent = stale ? 'GPS vecchio' : 'GPS +' + Math.round(acc) + ' m';
-      el.appendChild(b);
+    const bad = stale || (acc != null && acc > 50);
+    if (!meEl) {
+      meEl = document.createElement('div');
+      meEl.className = 'me';
+      meBadge = document.createElement('div');
+      meBadge.className = 'me-badge';
+      meBadge.hidden = true;
+      meEl.appendChild(meBadge);
+      meMarker = new maplibregl.Marker({ element: meEl, anchor: 'center' })
+        .setLngLat([pos.lng, pos.lat]).addTo(map);
+      return;
     }
-    meMarker = new maplibregl.Marker({ element: el, anchor: 'center' })
-      .setLngLat([pos.lng, pos.lat]).addTo(map);
+    meMarker.setLngLat([pos.lng, pos.lat]);
+    if (bad) {
+      const txt = stale ? 'GPS vecchio' : 'GPS +' + Math.round(acc) + ' m';
+      if (meBadge.textContent !== txt) meBadge.textContent = txt;
+      meBadge.hidden = false;
+    } else {
+      meBadge.hidden = true;
+    }
+  }
+
+  /* ---------- movimento fluido del puntino (interpolazione fra due GPS) ---------- */
+  function lerpAngle(a, b, t) {
+    const d = ((b - a + 540) % 360) - 180;
+    return (a + d * t + 360) % 360;
+  }
+
+  function navPath() {
+    if (!Nav.route || !Nav.route.coords || Nav.route.coords.length < 2) return null;
+    return { coords: Nav.route.coords, cum: Nav.route.cum, total: Nav.route.total };
+  }
+
+  function puckNow() {
+    const p = Nav.puck;
+    if (!p) return { lat: S.me.lat, lng: S.me.lng, along: null };
+    const t = Math.max(0, Math.min(1, (Date.now() - p.t0) / p.dur));
+    const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    const path = navPath();
+    if (path && p.alongA != null && p.alongB != null) {
+      const along = p.alongA + (p.alongB - p.alongA) * e;
+      const pos = pointAtAlong(path, along);
+      return { lat: pos.lat, lng: pos.lng, along: along };
+    }
+    return { lat: p.a.lat + (p.b.lat - p.a.lat) * e, lng: p.a.lng + (p.b.lng - p.a.lng) * e, along: null };
+  }
+
+  function followTick() {
+    Nav.raf = null;
+    if (!Nav.active || !map) return;
+    const pos = puckNow();
+    if (meMarker) meMarker.setLngLat([pos.lng, pos.lat]);
+    if (S.follow !== false) {
+      const path = navPath();
+      if (path && pos.along != null) {
+        const ahead = pointAtAlong(path, pos.along + 25);
+        const target = pointAtAlong(path, pos.along + 120);
+        const bT = hav(pos, ahead) > 1.5 ? bearingBetween(pos, ahead) : (Nav.bear == null ? map.getBearing() : Nav.bear);
+        Nav.bear = Nav.bear == null ? bT : lerpAngle(Nav.bear, bT, 0.18);
+        const z = Math.max(map.getZoom(), canPitch() ? 17 : 16);
+        const c = map.getCenter();
+        if (!Nav.lastCam || Math.abs(c.lat - target.lat) > 0.0000005 || Math.abs(c.lng - target.lng) > 0.0000005 ||
+            Math.abs(map.getBearing() - Nav.bear) > 0.05 || Math.abs(map.getZoom() - z) > 0.01) {
+          try {
+            map.jumpTo({
+              center: [target.lng, target.lat],
+              bearing: Nav.bear,
+              pitch: canPitch() ? 55 : 0,
+              zoom: z
+            });
+            Nav.lastCam = { lat: target.lat, lng: target.lng };
+          } catch (e) { }
+        }
+      }
+    }
+    Nav.raf = requestAnimationFrame(followTick);
+  }
+
+  function startFollowLoop() {
+    if (Nav.raf == null) Nav.raf = requestAnimationFrame(followTick);
+  }
+
+  function stopFollowLoop() {
+    if (Nav.raf != null) { cancelAnimationFrame(Nav.raf); Nav.raf = null; }
   }
 
   function redrawMap() {
@@ -2646,7 +2728,10 @@
       }
     }
     Nav.active = true; Nav.spoken = {}; Nav.offCount = 0; S.follow = true;
+    Nav.puck = null; Nav.bear = null; Nav.lastFixAt = 0; Nav.lastCam = null;
     keepAwake(true);
+    updateFollowUI();
+    startFollowLoop();
     $('#route-state').classList.add('hide');
     setNavButton(true);
     $('#nav-banner').classList.add('on');
@@ -2666,10 +2751,13 @@
     keepAwake(false);
     if (Nav.watchId != null) { try { navigator.geolocation.clearWatch(Nav.watchId); } catch (e) { } Nav.watchId = null; }
     Nav.route = null; Nav.busy = false;
+    Nav.puck = null; Nav.bear = null; Nav.lastFixAt = 0; Nav.lastCam = null;
+    stopFollowLoop();
     setNavButton(false);
     $('#nav-banner').classList.remove('on');
     clearNavSource();
     $('#route-state').classList.remove('hide');
+    updateFollowUI();
     if (map && map.getPitch && map.getPitch() > 0) { try { map.easeTo({ pitch: 0, bearing: 0, duration: 600 }); } catch (e) { } }
     if (!silent) { try { window.speechSynthesis.cancel(); } catch (e) { } }
     updateEta();
@@ -2693,43 +2781,69 @@
   }
 
   function applyNavCamera() {
-    if (!map || !S.me || !Nav.route || !Nav.route.coords || Nav.route.coords.length < 2) return;
-    const path = { coords: Nav.route.coords, cum: Nav.route.cum, total: Nav.route.total };
-    const pr = projectOnPath(path, S.me);
-    const snap = pointAtAlong(path, pr.along);
-    const ahead = pointAtAlong(path, pr.along + (canPitch() ? 60 : 90));
-    const opt = {
-      center: [ahead.lng, ahead.lat],
-      zoom: Math.max(map.getZoom(), canPitch() ? 17 : 16),
-      duration: 700,
-      padding: canPitch() ? { top: 0, bottom: 150, left: 0, right: 0 } : { top: 0, bottom: 0, left: 0, right: 0 }
-    };
-    if (canPitch()) {
-      opt.pitch = 55;
-      opt.bearing = hav(snap, ahead) > 2 ? bearingBetween(snap, ahead) : 0;
-    }
-    try { map.easeTo(opt); } catch (e) { }
+    const path = navPath();
+    if (!map || !path) return;
+    const pos = puckNow();
+    const along = pos.along != null ? pos.along : 0;
+    const ahead = pointAtAlong(path, along + 120);
+    Nav.bear = hav(pos, pointAtAlong(path, along + 25)) > 1.5 ? bearingBetween(pos, pointAtAlong(path, along + 25)) : (Nav.bear == null ? map.getBearing() : Nav.bear);
+    Nav.lastCam = null;
+    try {
+      map.jumpTo({
+        center: [ahead.lng, ahead.lat],
+        bearing: Nav.bear,
+        pitch: canPitch() ? 55 : 0,
+        zoom: Math.max(map.getZoom(), canPitch() ? 17 : 16)
+      });
+    } catch (e) { }
+    startFollowLoop();
+  }
+
+  function updateFollowUI() {
+    const b = $('#resume-nav');
+    if (!b) return;
+    b.hidden = !(Nav.active && S.follow === false);
+  }
+
+  function resumeNav() {
+    if (!Nav.active) return false;
+    S.follow = true;
+    Nav.bear = map ? map.getBearing() : null;
+    applyNavCamera();
+    updateFollowUI();
+    return true;
   }
 
   function onFix(pos) {
+    const prevPuck = Nav.puck ? puckNow() : null;
     S.me = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, speed: pos.coords.speed, ts: Date.now(), head: pos.coords.heading };
     S.meSnap = null;
+    let alongNow = null;
     if (Nav.active && Nav.route && Nav.route.coords && Nav.route.coords.length > 2) {
       const path = { coords: Nav.route.coords, cum: Nav.route.cum, total: Nav.route.total };
       const pr = projectOnPath(path, S.me);
-      if (pr.d < 100) S.meSnap = pointAtAlong(path, pr.along);
+      if (pr.d < 100) { S.meSnap = pointAtAlong(path, pr.along); alongNow = pr.along; }
     }
+    const target = (Nav.active && S.meSnap) ? { lat: S.meSnap.lat, lng: S.meSnap.lng } : { lat: S.me.lat, lng: S.me.lng };
+    const dt = Nav.lastFixAt ? Math.min(1600, Math.max(450, Date.now() - Nav.lastFixAt)) : 900;
+    Nav.lastFixAt = Date.now();
+    Nav.puck = {
+      a: prevPuck ? { lat: prevPuck.lat, lng: prevPuck.lng } : target,
+      b: target,
+      alongA: (prevPuck && prevPuck.along != null) ? prevPuck.along : alongNow,
+      alongB: alongNow,
+      t0: Date.now(),
+      dur: dt
+    };
     updateMeMarker();
-    if (S.follow !== false && map) {
-      if (Nav.active && Nav.route && Nav.route.coords && Nav.route.coords.length > 2) {
-        applyNavCamera();
-      } else {
-        const z = Math.max(map.getZoom(), 16);
-        const c = map.getCenter();
-        const d = hav(S.me, { lat: c.lat, lng: c.lng });
-        if (d > 25) map.easeTo({ center: [S.me.lng, S.me.lat], zoom: z, pitch: 0, bearing: 0, duration: 500 });
-        else if (map.getZoom() < z) map.easeTo({ zoom: z, duration: 300 });
-      }
+    if (Nav.active && Nav.route) {
+      startFollowLoop();
+    } else if (S.follow !== false && map) {
+      const z = Math.max(map.getZoom(), 16);
+      const c = map.getCenter();
+      const d = hav(S.me, { lat: c.lat, lng: c.lng });
+      if (d > 25) map.easeTo({ center: [S.me.lng, S.me.lat], zoom: z, pitch: 0, bearing: 0, duration: 500 });
+      else if (map.getZoom() < z) map.easeTo({ zoom: z, duration: 300 });
     }
     if (!Nav.active) { updateEta(); return; }
     if (!Nav.route) { refreshNavRoute(); return; }
@@ -4108,6 +4222,7 @@
     });
     $('#btn-retry').addEventListener('click', retryMissing);
     $('#btn-recenter').addEventListener('click', () => {
+      if (resumeNav()) return;
       if (S.me) { map.easeTo({ center: [S.me.lng, S.me.lat], zoom: Math.max(map.getZoom(), 16), pitch: 0, bearing: 0, duration: 500 }); S.follow = true; }
       else { fitAll(); }
     });
@@ -4126,6 +4241,9 @@
       refreshNavRoute();
     });
     $('#nav-skip').addEventListener('click', skipCurrentNav);
+    $('#resume-nav').addEventListener('click', () => {
+      if (resumeNav()) toast('Navigazione ripresa', 'good');
+    });
     $('#btn-nav').addEventListener('click', () => {
       if (Nav.active) { stopNav(); toast('Navigazione fermata'); return; }
       openNavMenu(activeStops()[0]);
@@ -4223,7 +4341,7 @@
     if (bt) bt.textContent = APP_BUILD;
     // iOS: le voci arrivano in ritardo
     if ('speechSynthesis' in window) window.speechSynthesis.onvoiceschanged = () => { voiceIt = null; };
-    window.PasoMaps = { db: () => db, S: S, Nav: Nav, getMap: () => map, computePreview: computePreview, voice: { parse: parseVoiceCommand, run: runVoiceText }, photos: { open: openPhotos, counts: () => photoCounts, refresh: refreshPhotoCounts }, imports: { parse: parseList, pdf: pdfToText }, lang: () => LANG, setLang: setLang };
+    window.PasoMaps = { db: () => db, S: S, Nav: Nav, getMap: () => map, computePreview: computePreview, voice: { parse: parseVoiceCommand, run: runVoiceText }, photos: { open: openPhotos, counts: () => photoCounts, refresh: refreshPhotoCounts }, imports: { parse: parseList, pdf: pdfToText }, lang: () => LANG, setLang: setLang, simFix: (lat, lng, head) => onFix({ coords: { latitude: lat, longitude: lng, accuracy: 5, speed: 9, heading: head == null ? 30 : head }, timestamp: Date.now() }), puckNow: () => puckNow() };
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
